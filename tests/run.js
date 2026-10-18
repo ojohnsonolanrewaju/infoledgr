@@ -91,6 +91,39 @@ test('re-import flags duplicates', () => {
   assert.ok(again.every((x) => x.duplicate && !x.include));
 });
 
+test('PayPal lines are filed under the real shop', () => {
+  const H = 'Buchungstag;Wert;Umsatzart;Begünstigter / Auftraggeber;Verwendungszweck;IBAN;BIC;Kundenreferenz;Mandatsreferenz ;Gläubiger ID;Fremde Gebühren;Betrag;Abweichender Empfänger;Anzahl der Aufträge;Anzahl der Schecks;Soll;Haben;Währung';
+  const row = (d, purpose, amt) => `${d};${d};SEPA-Lastschrift;PayPal Europe S.a.r.l. et Cie S.C.A;${purpose};LU89;PPLXLUL2;;;;;;;;;${amt};;EUR`;
+  const a = csv.analyse([H,
+    row('20.10.2026', '1043438966963 PP.4396.PP . Lieferando.de, Ihr Einkauf bei Lieferando.de', '-23,40'),
+    row('19.10.2026', '1043438966964/PP.4396.PP/. REWE Markt GmbH, Ihr Einkauf bei REWE Markt GmbH', '-41,10'),
+    row('18.10.2026', '1043438966965 PP.4396.PP . ZALANDO SE, Ihr Einkauf bei ZALANDO SE', '-79,95'),
+    row('17.10.2026', '1043438966966 PP.4396.PP ABBUCHUNG VOM PAYPAL-KONTO', '-15,00'),
+  ].join('\n'));
+  const d = csv.toDrafts(a.body, a.map, store);
+  const by = (p) => d.find((x) => x.payee === p);
+  assert.strictEqual(store.catName(by('Lieferando.de').category), 'Dining & Cafés');
+  assert.strictEqual(store.catName(by('REWE Markt GmbH').category), 'Groceries');
+  assert.strictEqual(store.catName(by('ZALANDO SE').category), 'Shopping');
+  assert.ok(d.every((x) => x.via === 'PayPal' && x.note.startsWith('via PayPal')));
+  assert.ok(!by('ABBUCHUNG VOM PAYPAL-KONTO') && !by('ABBUCHUNG'), 'bank wording is not a shop');
+  const unknown = by('PayPal');
+  assert.ok(unknown && unknown.review, 'a PayPal line without a shop asks for a category');
+  assert.ok(!by('REWE Markt GmbH').review);
+});
+test('past choices for a payee win over rules on import', () => {
+  const tea = store.data.cats.find((c) => c.name === 'Gifts & Donations');
+  store.upsert('tx', { id: 'hist1', date: '2026-09-01', type: 'expense', amount: 5, amountEUR: 5, payee: 'ZALANDO SE', category: tea.id }, { silent: true });
+  const H = 'Buchungstag;Begünstigter / Auftraggeber;Verwendungszweck;Betrag;Währung';
+  const a = csv.analyse(H + '\n21.10.2026;PayPal Europe;PP.1.PP . ZALANDO SE, Ihr Einkauf bei ZALANDO SE;-10,00;EUR');
+  assert.strictEqual(store.catName(csv.toDrafts(a.body, a.map, store)[0].category), 'Gifts & Donations');
+  store.data.tx = store.data.tx.filter((t) => t.id !== 'hist1');
+});
+test('PayPal itself never becomes a rule', () => {
+  assert.ok(csv.isIntermediary('PayPal Europe S.a.r.l.'));
+  assert.ok(!csv.isIntermediary('REWE Markt GmbH'));
+});
+
 console.log('store & analytics');
 test('totals per month', () => {
   const t = calc.totals('2026-10');

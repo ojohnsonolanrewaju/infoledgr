@@ -91,11 +91,42 @@
     return { delim, headers, map, body: rows.slice(headerIdx + 1) };
   }
 
+  // Payment services that sit between you and the shop — the bank shows them, not the merchant
+  const INTERMEDIARY = /\b(paypal|klarna|sofort|pay\.?pal)\b/i;
+  const isIntermediary = (s) => INTERMEDIARY.test(String(s || ''));
+
+  /**
+   * Dig the real shop out of a PayPal/Klarna bank line, e.g.
+   * "1043438966963 PP.4396.PP . Lieferando.de, Ihr Einkauf bei Lieferando.de" → "Lieferando.de"
+   */
+  function extractMerchant(payee, purpose) {
+    const text = `${payee} ${purpose}`;
+    if (!isIntermediary(text)) return null;
+    const via = /klarna/i.test(text) ? 'Klarna' : /sofort/i.test(text) ? 'Sofort' : 'PayPal';
+    const patterns = [
+      /Ihr Einkauf bei\s+(.+?)\s*(?:,|$|\bAWV)/i,
+      /Your purchase (?:at|with)\s+(.+?)\s*(?:,|$)/i,
+      /PP\.\d+\.PP\s*\/?\s*\.\s*([^,]+?)\s*(?:,|$)/i, // needs the ". " separator before the shop
+      /Einkauf bei\s+(.+?)\s*(?:,|$)/i,
+    ];
+    for (const re of patterns) {
+      const m = purpose.match(re);
+      const name = m && m[1].replace(/\s+/g, ' ').trim();
+      if (name && name.length > 1 && !isIntermediary(name) && !/^\d+$/.test(name)) return { merchant: name, via };
+    }
+    return { merchant: '', via };
+  }
+
   /** Turn parsed rows into transaction drafts using a column map. */
   function toDrafts(body, map, store) {
     const existing = new Set(store.data.tx.map((t) => t.hash).filter(Boolean));
     const seen = new Set();
     const out = [];
+    // Your own past choices beat generic rules: latest category per payee and type
+    const history = new Map();
+    for (const t of [...store.data.tx].sort((a, b) => a.date.localeCompare(b.date))) {
+      if (t.payee && !isIntermediary(t.payee)) history.set(t.type + '|' + t.payee.toUpperCase(), t.category);
+    }
     for (const r of body) {
       const date = parseDate(r[map.date]);
       if (!date) continue; // footer lines such as "Kontostand" / "Account balance"
@@ -108,14 +139,19 @@
       }
       if (!Number.isFinite(amt) || amt === 0) continue;
 
-      const payee = (r[map.payee] || '').replace(/\s+/g, ' ').trim();
+      const rawPayee = (r[map.payee] || '').replace(/\s+/g, ' ').trim();
       const purpose = (r[map.purpose] || '').replace(/\s+/g, ' ').trim();
       const currency = (/^[A-Z]{3}$/.test(r[map.currency] || '') ? r[map.currency] : 'EUR');
       const type = amt < 0 ? 'expense' : 'income';
-      const hash = U.hash([date, amt.toFixed(2), payee.toUpperCase(), purpose.toUpperCase()].join('|'));
-      const text = `${payee} ${purpose} ${r[map.kind] || ''}`;
-      const category = store.matchRule(text, type) ||
-        (type === 'income' ? catIdByName(store, 'Other Income') : catIdByName(store, 'Other'));
+      const hash = U.hash([date, amt.toFixed(2), rawPayee.toUpperCase(), purpose.toUpperCase()].join('|'));
+      const mid = extractMerchant(rawPayee, purpose);
+      const payee = mid ? (mid.merchant || mid.via) : rawPayee;
+      // For PayPal & co. match on the merchant only, never on the word "PayPal"
+      const text = mid ? (mid.merchant ? `${mid.merchant} ${purpose}` : '') : `${rawPayee} ${purpose} ${r[map.kind] || ''}`;
+      const fromHistory = payee && !isIntermediary(payee) ? history.get(type + '|' + payee.toUpperCase()) : null;
+      const fromRule = text ? store.matchRule(text, type) : null;
+      const known = (fromHistory && store.cat(fromHistory) && fromHistory) || fromRule;
+      const category = known || (type === 'income' ? catIdByName(store, 'Other Income') : catIdByName(store, 'Other'));
 
       // Same line twice in one file is legitimate (two coffees) — only flag repeats against stored history
       let h = hash, k = 1;
@@ -123,8 +159,10 @@
       seen.add(h);
 
       out.push({
-        include: !existing.has(h), duplicate: existing.has(h), matched: !!store.matchRule(text, type),
-        date, type, amount: Math.abs(amt), currency, payee: payee || purpose.slice(0, 40), note: purpose,
+        include: !existing.has(h), duplicate: existing.has(h), matched: !!known,
+        via: mid ? mid.via : '', review: !!mid && !known,
+        date, type, amount: Math.abs(amt), currency, payee: payee || purpose.slice(0, 40),
+        note: mid ? `via ${mid.via} · ${purpose}` : purpose,
         category, scope: 'personal', hash: h,
       });
     }
@@ -148,5 +186,5 @@
     return '﻿' + [head.map(q).join(','), ...lines].join('\n');
   }
 
-  IL.csv = { decode, detectDelimiter, parseRows, parseAmount, parseDate, analyse, toDrafts, exportCsv };
+  IL.csv = { isIntermediary, extractMerchant, decode, detectDelimiter, parseRows, parseAmount, parseDate, analyse, toDrafts, exportCsv };
 })(typeof window !== 'undefined' ? window : globalThis);

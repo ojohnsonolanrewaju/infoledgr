@@ -638,7 +638,7 @@
             });
           }
           close();
-          const learn = isEdit && existing.source === 'csv' && row.payee && row.category !== originalCat;
+          const learn = isEdit && existing.source === 'csv' && row.payee && row.category !== originalCat && !csv.isIntermediary(row.payee);
           if (learn) {
             toast(`Always file “${row.payee}” under ${store.catName(row.category)}?`, {
               action: 'Always', onAction: () => {
@@ -959,7 +959,7 @@
       tbody.innerHTML = drafts.map((d, i) => `<tr class="${d.duplicate ? 'dup' : ''}">
         <td><input type="checkbox" data-inc="${i}"${d.include ? ' checked' : ''} aria-label="Include"></td>
         <td class="num">${d.date.slice(8)}.${d.date.slice(5, 7)}.</td>
-        <td class="payee" title="${esc(d.note)}">${esc(d.payee)}${d.duplicate ? ' <span class="badge">already imported</span>' : ''}</td>
+        <td class="payee" title="${esc(d.note)}">${esc(d.payee)}${d.via ? ` <span class="badge">via ${esc(d.via)}</span>` : ''}${d.duplicate ? ' <span class="badge">already imported</span>' : ''}${d.review && !d.duplicate ? ' <span class="badge biz">pick category</span>' : ''}</td>
         <td class="num ${d.type === 'income' ? 'amt-in' : ''}" style="text-align:right;white-space:nowrap">${d.type === 'income' ? '+' : '−'}${U.fmt(d.amount, d.currency).replace(/^[−+]/, '')}</td>
         <td><select data-cat="${i}">${catOpts(d.type, d.category)}</select></td>
         <td><select data-sc="${i}"><option value="personal">👤</option><option value="business">🏢</option></select></td></tr>`).join('');
@@ -970,7 +970,8 @@
       const dups = drafts.filter((d) => d.duplicate).length;
       box.querySelector('#imp-go').textContent = `Import ${n} transaction${n === 1 ? '' : 's'}`;
       box.querySelector('#imp-go').disabled = !n;
-      box.querySelector('#imp-sum').textContent = `${drafts.length} rows found · ${drafts.filter((d) => d.matched).length} auto-categorised${dups ? ` · ${dups} already imported` : ''}`;
+      const review = drafts.filter((d) => d.review && d.include).length;
+      box.querySelector('#imp-sum').textContent = `${drafts.length} rows found · ${drafts.filter((d) => d.matched).length} auto-categorised${dups ? ` · ${dups} already imported` : ''}${review ? ` · ${review} PayPal payment${review === 1 ? '' : 's'} without a shop name: pick the category` : ''}`;
     };
 
     box.innerHTML = `
@@ -993,7 +994,7 @@
       if (t.dataset.cat != null) {
         const d = drafts[t.dataset.cat];
         d.category = t.value;
-        if (d.payee) {
+        if (d.payee && !csv.isIntermediary(d.payee)) {
           learned[d.payee.toUpperCase()] = t.value;
           // apply the same choice to other rows from this payee
           drafts.forEach((o, j) => {
