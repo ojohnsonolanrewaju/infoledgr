@@ -30,6 +30,7 @@
     ['Nigeria Investments', 'expense', 'Sent Home', '📈'],
     ['Fees & Charges', 'expense', 'Financial', '🏦'],
     ['Taxes', 'expense', 'Financial', '🧾'],
+    ['Loan Refund', 'expense', 'Financial', '💳'],
     ['Other', 'expense', 'Financial', '📦'],
     ['Salary', 'income', 'Income', '💼'],
     ['Business Income', 'income', 'Income', '🏢'],
@@ -59,9 +60,16 @@
     ['LUFTHANSA', 'Travel'], ['RYANAIR', 'Travel'], ['EUROWINGS', 'Travel'], ['BOOKING.COM', 'Travel'], ['AIRBNB', 'Travel'],
     ['FAU ', 'Education'], ['ERLANGEN-NUERNBERG', 'Education'], ['STUDENTENWERK', 'Education'],
     ['WORLDREMIT', 'Family Support'], ['LEMFI', 'Family Support'], ['REMITLY', 'Family Support'], ['WESTERN UNION', 'Family Support'],
+    ['DARLEHEN', 'Loan Refund'], ['TILGUNG', 'Loan Refund'], ['KREDITRATE', 'Loan Refund'], ['LOAN REPAYMENT', 'Loan Refund'],
     ['FINANZAMT', 'Taxes'], ['ENTGELT', 'Fees & Charges'], ['KONTOFUEHRUNG', 'Fees & Charges'], ['KONTOFÜHRUNG', 'Fees & Charges'],
     ['DELOITTE', 'Salary'], ['GEHALT', 'Salary'], ['LOHN', 'Salary'], ['ZINSEN', 'Interest & Dividends'], ['DIVIDENDE', 'Interest & Dividends'],
   ];
+
+  // Starter items added after the first release, so existing installs get them too
+  const SEED_VERSION = 2;
+  const SEED_ADDITIONS = {
+    2: { cats: ['Loan Refund'], rules: ['DARLEHEN', 'TILGUNG', 'KREDITRATE', 'LOAN REPAYMENT'] },
+  };
 
   // Fallback rates (units per EUR) until the Sheet or the web provides live ones
   const FALLBACK_RATES = { EUR: 1, NGN: 1700, USD: 1.1, GBP: 0.86 };
@@ -69,7 +77,7 @@
   const DEFAULT_SETTINGS = {
     apiUrl: '', apiKey: '', lastSync: 0, lastSyncError: '',
     pinHash: '', pinSalt: '', lockAfterMin: 5, privacy: false,
-    defaultCurrency: 'EUR', theme: 'auto', seeded: false,
+    defaultCurrency: 'EUR', theme: 'auto', seeded: false, seedVersion: 1,
   };
 
   /* ── Normalisers: coerce Sheet strings back to typed values ── */
@@ -122,6 +130,7 @@
       this.queue = ls.get(KEYS.queue, []);
       this.settings = Object.assign({ ...DEFAULT_SETTINGS }, ls.get(KEYS.settings, {}));
       if (!this.settings.seeded && !this.data.cats.length) this.seed();
+      if (!this.settings.apiUrl) this.migrateSeeds(); // synced devices migrate after their first pull
     },
     save() { ls.set(KEYS.data, this.data); ls.set(KEYS.queue, this.queue); },
     saveSettings() { ls.set(KEYS.settings, this.settings); },
@@ -136,8 +145,38 @@
       SEED_RULES.forEach(([pattern, catName]) =>
         this.upsert('rules', { id: 'rule-' + U.hash(pattern), pattern, category: 'cat-' + U.hash(catName), updatedAt: now }, { silent: true }));
       this.settings.seeded = true;
+      this.settings.seedVersion = SEED_VERSION;
       this.saveSettings();
       this.save();
+    },
+
+    /** Add starter categories/rules introduced in later versions, once, without duplicating. */
+    migrateSeeds() {
+      const from = this.settings.seedVersion || 1;
+      if (from >= SEED_VERSION) return 0;
+      let added = 0;
+      for (let v = from + 1; v <= SEED_VERSION; v++) {
+        const add = SEED_ADDITIONS[v] || {};
+        for (const name of add.cats || []) {
+          const i = SEED_CATS.findIndex((c) => c[0] === name);
+          const [, type, group, icon] = SEED_CATS[i];
+          const id = 'cat-' + U.hash(name);
+          if (this.data.cats.some((c) => c.id === id || c.name.toLowerCase() === name.toLowerCase())) continue;
+          this.upsert('cats', { id, name, type, group, icon, budget: 0, order: i - 0.5, archived: false }, { silent: true });
+          added++;
+        }
+        for (const pattern of add.rules || []) {
+          const id = 'rule-' + U.hash(pattern);
+          if (this.data.rules.some((r) => r.id === id || r.pattern === pattern)) continue;
+          const catName = SEED_RULES.find((r) => r[0] === pattern)[1];
+          this.upsert('rules', { id, pattern, category: 'cat-' + U.hash(catName) }, { silent: true });
+          added++;
+        }
+      }
+      this.settings.seedVersion = SEED_VERSION;
+      this.saveSettings();
+      if (added) { this.save(); this.emit('change'); }
+      return added;
     },
 
     /* ── CRUD (every change is queued for the Sheet) ── */

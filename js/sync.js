@@ -85,6 +85,7 @@
         }
         const { data } = await api.call('pull');
         store.applyRemote(data, store.queue);
+        store.migrateSeeds();
         store.postRecurring();
         store.settings.lastSync = Date.now();
         this.setStatus('idle');

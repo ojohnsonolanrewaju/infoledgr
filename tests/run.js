@@ -141,4 +141,21 @@ test('applyRemote replays pending ops', () => {
   assert.strictEqual(store.rate('NGN'), 1800);
 });
 
+test('existing installs get new starter categories once', () => {
+  for (const k of Object.keys(mem)) delete mem[k];
+  store.load(); // fresh install
+  const loanId = 'cat-' + U.hash('Loan Refund');
+  assert.ok(store.data.cats.some((c) => c.id === loanId), 'new installs are seeded with it');
+  // simulate an install from before Loan Refund existed
+  store.data.cats = store.data.cats.filter((c) => c.id !== loanId);
+  store.data.rules = store.data.rules.filter((r) => r.category !== loanId);
+  store.settings.seedVersion = 1;
+  assert.strictEqual(store.migrateSeeds(), 5);
+  assert.strictEqual(store.migrateSeeds(), 0);
+  assert.strictEqual(store.data.cats.filter((c) => c.name === 'Loan Refund').length, 1);
+  assert.strictEqual(store.catName(store.matchRule('DARLEHEN RATE 11/2026', 'expense')), 'Loan Refund');
+  const order = store.cats('expense').map((c) => c.name);
+  assert.ok(order.indexOf('Loan Refund') < order.indexOf('Other'), 'Other stays last');
+});
+
 console.log(`\n${passed} tests passed`);
