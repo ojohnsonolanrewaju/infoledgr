@@ -2,8 +2,9 @@
  * InfoLedgr — Google Apps Script backend
  * ------------------------------------------------------------
  * Paste this whole file into Extensions → Apps Script of an empty
- * Google Sheet, run `setup` once, then Deploy → New deployment →
- * Web app (Execute as: Me, Who has access: Anyone).
+ * Google Sheet (or a standalone project at script.google.com — setup
+ * then creates the Sheet for you), run `setup` once, then Deploy →
+ * New deployment → Web app (Execute as: Me, Who has access: Anyone).
  *
  * The Sheet is the source of truth. The app keeps an offline copy
  * on each device and syncs through this script. Every request must
@@ -30,18 +31,39 @@ var RECEIPT_FOLDER = 'InfoLedgr Receipts';
 /* ── One-time setup ─────────────────────────────────────────── */
 
 function setup() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_(true);
   Object.keys(SHEETS).forEach(function (name) { ensureSheet_(ss, name); });
   ensureRatesSheet_(ss);
 
-  var first = ss.getSheetByName('Sheet1');
-  if (first && ss.getSheets().length > 1 && first.getLastRow() === 0) ss.deleteSheet(first);
+  // Remove the empty starter tab ("Sheet1", "Tabellenblatt1", …)
+  ss.getSheets().forEach(function (sh) {
+    if (!SHEETS[sh.getName()] && sh.getName() !== 'Rates' && sh.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(sh);
+  });
 
   var props = PropertiesService.getScriptProperties();
   if (!props.getProperty('API_KEY')) props.setProperty('API_KEY', Utilities.getUuid().replace(/-/g, ''));
-  Logger.log('✅ Setup complete.');
+  Logger.log('✅ Setup complete. Your data Sheet: ' + ss.getUrl());
   Logger.log('Your InfoLedgr API key: ' + props.getProperty('API_KEY'));
   Logger.log('Next: Deploy → New deployment → Web app (Execute as: Me, Who has access: Anyone).');
+}
+
+/**
+ * The Sheet that holds the data. Works whether this script was created from
+ * a Sheet (Extensions → Apps Script) or standalone at script.google.com —
+ * in the standalone case `setup` creates an "InfoLedgr Data" Sheet in your Drive.
+ */
+function getSpreadsheet_(createIfMissing) {
+  var active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) return active;
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('SPREADSHEET_ID');
+  if (id) {
+    try { return SpreadsheetApp.openById(id); } catch (e) { /* deleted or no access — fall through */ }
+  }
+  if (!createIfMissing) throw new Error('No data Sheet found. Open Apps Script and run setup again.');
+  var ss = SpreadsheetApp.create('InfoLedgr Data');
+  props.setProperty('SPREADSHEET_ID', ss.getId());
+  return ss;
 }
 
 /** Run this if you lose your key. */
@@ -129,7 +151,7 @@ function json_(obj) {
 /* ── Actions ────────────────────────────────────────────────── */
 
 function pull_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   var tz = ss.getSpreadsheetTimeZone();
   var out = {};
   Object.keys(SHEETS).forEach(function (name) {
@@ -183,7 +205,7 @@ function push_(ops) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = getSpreadsheet_();
     var bySheet = {};
     ops.forEach(function (o) {
       if (!SHEETS[o.sheet] || !o.row || !o.row.id) return;
@@ -268,7 +290,7 @@ function upload_(req) {
 function addCurrency_(code) {
   code = String(code || '').trim().toUpperCase();
   if (!/^[A-Z]{3}$/.test(code)) return { ok: false, error: 'Currency must be a 3-letter code' };
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   var sh = ensureRatesSheet_(ss);
   var codes = sh.getRange(1, 1, sh.getLastRow(), 1).getValues().map(function (r) { return String(r[0]).toUpperCase(); });
   if (codes.indexOf(code) === -1) addRateRow_(sh, code);
