@@ -149,10 +149,14 @@ test('a URL from a different Sheet is caught before showing the link', () => {
   assert.ok(ui.alerts.some((m) => m.includes('different InfoLedgr Sheet')));
   assert.ok(!props.WEB_APP_URL, 'forgets the wrong URL so it asks again');
 });
-test('an unreachable URL (not "Anyone") is explained', () => {
-  const { api, ui } = load({ bound: true, serviceUrl: 'https://script.google.com/macros/s/AKfyX/exec', fetchAs: 'html' });
+test('an address the self-test cannot reach asks for the real one, then shows it with a note', () => {
+  const pasted = 'https://script.google.com/macros/s/AKfyPASTED/exec';
+  const { api, ui, props } = load({ bound: true, serviceUrl: 'https://script.google.com/macros/s/AKfyX/exec', promptAnswer: pasted, fetchAs: 'html' });
   api.setup(); api.showConnection();
-  assert.ok(ui.alerts.some((m) => m.includes('Who has access: Anyone')));
+  assert.strictEqual(ui.prompts, 1, 'asks instead of blocking');
+  assert.strictEqual(ui.dialogs.length, 1, 'still shows the details');
+  assert.ok(ui.dialogs[0].includes(pasted) && ui.dialogs[0].includes("Couldn't double-check"));
+  assert.strictEqual(props.WEB_APP_URL, pasted);
 });
 
 console.log(`\n${passed} tests passed`);

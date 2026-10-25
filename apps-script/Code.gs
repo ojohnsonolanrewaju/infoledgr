@@ -109,22 +109,11 @@ function showDeployHelp() {
 
 function showConnection() {
   var ui = SpreadsheetApp.getUi();
-  var props = PropertiesService.getScriptProperties();
-  var key = props.getProperty('API_KEY');
+  var key = PropertiesService.getScriptProperties().getProperty('API_KEY');
   if (!key) return ui.alert('Run InfoLedgr → 1. Set up this Sheet first.');
-  var url = getWebAppUrl_();
-  if (!url) return;
-  // Make sure the address really belongs to THIS Sheet's script before handing it out
-  var check = checkWebAppUrl_(url, key);
-  if (check !== 'ok') {
-    props.deleteProperty('WEB_APP_URL');
-    return ui.alert(check === 'other-sheet'
-      ? 'That Web app URL belongs to a different InfoLedgr Sheet (for example your own, or an older copy).\n\n' +
-        'In THIS Sheet open Extensions → Apps Script, then Deploy → Manage deployments, copy the Web app URL there, ' +
-        'and choose InfoLedgr → 2. Show connection details again.'
-      : 'The app can\'t reach that Web app URL.\n\nCheck Deploy → Manage deployments → ✏️ → Who has access: Anyone, ' +
-        'and that you copied the URL ending in /exec. Then choose InfoLedgr → 2. Show connection details again.');
-  }
+  var found = resolveWebAppUrl_(key);
+  if (!found) return;
+  var url = found.url;
   var link = APP_URL ? APP_URL.replace(/\/+$/, '') + '/#connect?u=' + encodeURIComponent(url) + '&k=' + encodeURIComponent(key) : '';
   var esc = function (s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
   var box = function (label, value) {
@@ -132,38 +121,57 @@ function showConnection() {
       '<textarea readonly onclick="this.select()" style="width:100%;height:58px;font:12px monospace">' + esc(value) + '</textarea>';
   };
   var html = '<div style="font-family:Arial,sans-serif;font-size:13px;color:#0A0F1E">' +
+    (found.unverified ? '<p style="background:#FEF3C7;padding:8px 10px;border-radius:6px">Couldn\'t double-check this address from here. ' +
+      'If connecting fails, check Deploy → Manage deployments → ✏️ → Who has access: <b>Anyone</b>.</p>' : '') +
     (link ? '<p><b>Easiest:</b> open this link on each phone and laptop, then tap <b>Connect &amp; sync</b>. ' +
       'Send it to yourself (e.g. email or WhatsApp to yourself). Keep it private: it unlocks your data.</p>' + box('One-tap connect link', link) +
       '<p style="margin-top:18px;color:#5C6589">Or enter these in InfoLedgr → Settings → Connect Google Sheet:</p>' : '<p>Enter these in InfoLedgr → Settings → Connect Google Sheet:</p>') +
     box('Web app URL', url) + box('API key', key) + '</div>';
-  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(520).setHeight(link ? 470 : 300), 'Connect InfoLedgr');
+  ui.showModalDialog(HtmlService.createHtmlOutput(html).setWidth(520).setHeight((link ? 470 : 300) + (found.unverified ? 60 : 0)), 'Connect InfoLedgr');
 }
 
 /**
- * The deployed /exec address. Google's getUrl() sometimes returns the /dev test address,
- * whose id doesn't work with /exec, so in that case we ask once and remember the answer.
+ * Find this Sheet's /exec address. Tries the remembered one, then Google's guess, then asks.
+ * Only a definite mismatch (another Sheet's script answered) blocks; an address we simply
+ * couldn't test from here is shown with a note, because the self-test can fail on its own.
+ * Returns { url, unverified } or null.
  */
-function getWebAppUrl_() {
+function resolveWebAppUrl_(key) {
   var ui = SpreadsheetApp.getUi();
   var props = PropertiesService.getScriptProperties();
+  var candidates = [];
   var saved = props.getProperty('WEB_APP_URL');
-  if (saved) return saved;
+  if (saved) candidates.push(saved);
   var auto = '';
   try { auto = ScriptApp.getService().getUrl() || ''; } catch (e) { /* not deployed yet */ }
-  if (/\/exec$/.test(auto)) return auto;
+  if (/\/exec$/.test(auto) && auto !== saved) candidates.push(auto);
+  for (var i = 0; i < candidates.length; i++) {
+    if (checkWebAppUrl_(candidates[i], key) === 'ok') {
+      props.setProperty('WEB_APP_URL', candidates[i]);
+      return { url: candidates[i], unverified: false };
+    }
+  }
+  props.deleteProperty('WEB_APP_URL');
+
   var res = ui.prompt('One more step',
-    'Paste your Web app URL.\n\nFind it in Extensions → Apps Script → Deploy → Manage deployments ' +
+    'Paste your Web app URL.\n\nIn THIS Sheet: Extensions → Apps Script → Deploy → Manage deployments ' +
     '(it starts with https://script.google.com/macros/s/ and ends with /exec).\n\n' +
     "Haven't deployed yet? Click Cancel and see InfoLedgr → Help: how to deploy.",
     ui.ButtonSet.OK_CANCEL);
-  if (res.getSelectedButton() !== ui.Button.OK) return '';
+  if (res.getSelectedButton() !== ui.Button.OK) return null;
   var url = res.getResponseText().trim();
   if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) {
     ui.alert('That doesn\'t look like a Web app URL. It should start with https://script.google.com/macros/s/ and end with /exec. Please try again.');
-    return '';
+    return null;
+  }
+  var check = checkWebAppUrl_(url, key);
+  if (check === 'other-sheet') {
+    ui.alert('That Web app URL belongs to a different InfoLedgr Sheet (for example your own, or an older copy).\n\n' +
+      'Open Extensions → Apps Script from inside THIS Sheet, then Deploy → Manage deployments, and copy the URL there.');
+    return null;
   }
   props.setProperty('WEB_APP_URL', url);
-  return url;
+  return { url: url, unverified: check !== 'ok' };
 }
 
 /** 'ok' | 'other-sheet' (answers, but not to our key) | 'unreachable' (not deployed, not "Anyone", wrong URL) */
