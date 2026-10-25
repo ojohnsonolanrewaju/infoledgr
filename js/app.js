@@ -184,9 +184,7 @@
     const elapsed = ym < nowYm ? dim : ym > nowYm ? 0 : Number(U.today().slice(8));
     const daysLeft = ym === nowYm ? dim - elapsed + 1 : 0;
     const alerts = budgets.filter((b) => ['over', 'warn', 'pace'].includes(b.status)).slice(0, 4);
-    const home = store.settings.homeCurrency || 'NGN';
-    const sentIds = new Set(store.data.cats.filter((c) => c.group === 'Sent Home').map((c) => c.id));
-    const sentHome = U.sum(calc.txs({ ym, type: 'expense' }).filter((x) => sentIds.has(x.category)), (x) => x.amountEUR);
+    const family = calc.family(ym);
     const biz = calc.totals(ym, 'business');
     const top = calc.byCategory(ym)[0];
     const recent = sortTx(calc.txs({ ym })).slice(0, 6);
@@ -194,8 +192,9 @@
     const empty = store.data.tx.length === 0;
 
     $('#view').innerHTML = `
-      ${empty ? `<div class="card"><div class="card-h"><h2>Welcome to InfoLedgr 👋</h2></div>
-        <p class="sub" style="margin-bottom:14px">Start by adding a payment, importing your Deutsche Bank statement, or connecting your Google Sheet so your phone and laptop stay in sync.</p>
+      ${empty ? `<div class="card"><div class="card-h" style="display:block"><h2>Welcome to InfoLedgr 👋</h2>
+        <p style="font-weight:500;margin-top:2px">Your personal income, expense &amp; budget tracker</p></div>
+        <p class="sub" style="margin-bottom:14px">Start by adding a payment, importing your bank statement, or connecting your Google Sheet so your phone and laptop stay in sync.</p>
         <div class="onboard"><button class="btn primary" data-act="add">＋ Add a transaction</button>
         <button class="btn" data-act="import">⬆ Import bank CSV</button>
         <button class="btn" data-act="connect">🔗 Connect Google Sheet</button></div></div>` : ''}
@@ -225,7 +224,7 @@
         </div>
       </div>
       <div class="tiles">
-        <div class="tile"><div class="k">🌍 Sent home</div><div class="v">${M(sentHome)}</div><div class="d money">${home !== 'EUR' ? `≈ ${U.fmt(sentHome * store.rate(home), home, { decimals: 0 })}` : '&nbsp;'}</div></div>
+        <div class="tile"><div class="k">👪 Family &amp; giving</div><div class="v">${M(family)}</div><div class="d">${t.expense > 0 ? `${pct(family / t.expense)} of your spending` : '&nbsp;'}</div></div>
         <div class="tile"><div class="k">🏢 Business spend</div><div class="v">${M(biz.expense)}</div><div class="d">Income ${M(biz.income)}</div></div>
         <div class="tile"><div class="k">Top category</div><div class="v">${top ? `${top.cat?.icon || ''} ${M(top.amount)}` : '—'}</div><div class="d">${top ? esc(top.cat?.name || '') : 'No spending yet'}</div></div>
         <div class="tile"><div class="k">Transactions</div><div class="v num">${t.count}</div><div class="d">${t.expense > 0 && elapsed ? `${M(t.expense / elapsed)} / day avg` : '&nbsp;'}</div></div>
@@ -237,7 +236,7 @@
         </div>
         <div class="card">
           <div class="card-h"><h2>Savings goals</h2><button class="link" data-act="goal-new">＋ New</button></div>
-          ${goals.length ? goals.map(goalRow).join('') : '<p class="empty">Create a goal — an emergency fund, a Lagos trip, a new laptop.</p>'}
+          ${goals.length ? goals.map(goalRow).join('') : '<p class="empty">Create a goal — an emergency fund, a holiday, a new laptop.</p>'}
         </div>
       </div>`;
   };
@@ -379,9 +378,8 @@
     const groups = calc.byGroup(ym, sc);
     const cats = calc.byCategory(ym, sc);
     const year = ym.slice(0, 4);
-    const home = store.settings.homeCurrency || 'NGN';
-    const sent = calc.sentHome(year, home);
-    const sentNames = store.cats('expense').filter((c) => c.group === 'Sent Home').map((c) => c.name).join(' + ');
+    const fam = calc.familyYear(year, sc);
+    const famNames = store.cats('expense').filter((c) => c.group === IL.FAMILY).map((c) => c.name).join(' + ');
     const pers = calc.totals(ym, 'personal'), biz = calc.totals(ym, 'business');
 
     $('#view').innerHTML = `
@@ -407,23 +405,22 @@
         <div class="card"><div class="card-h"><h2>Top payees</h2></div><div id="ch-payees"></div></div>
         <div class="card"><div class="card-h"><h2>Personal vs business</h2><span class="sub">${U.monthLabel(ym, { month: 'long' })}</span></div>
           <div class="set-row"><span class="tx-ico">👤</span><span class="t"><b>Personal</b><small>Spent ${M(pers.expense)} · income ${M(pers.income)}</small></span><b class="money">${U.fmt(pers.net, 'EUR', { sign: true })}</b></div>
-          <div class="set-row"><span class="tx-ico">🏢</span><span class="t"><b>Business (Infolytics)</b><small>Spent ${M(biz.expense)} · income ${M(biz.income)}</small></span><b class="money">${U.fmt(biz.net, 'EUR', { sign: true })}</b></div>
+          <div class="set-row"><span class="tx-ico">🏢</span><span class="t"><b>Business / side hustle</b><small>Spent ${M(biz.expense)} · income ${M(biz.income)}</small></span><b class="money">${U.fmt(biz.net, 'EUR', { sign: true })}</b></div>
           <p class="sub" style="margin-top:8px">Mark a payment as Business when you add it. Handy for your tax return.</p></div>
-        <div class="card span2"><div class="card-h"><h2>🌍 Sent home in ${year}</h2><span class="sub">${esc(sentNames || 'Categories in the “Sent Home” group')}</span></div>
+        <div class="card span2"><div class="card-h"><h2>👪 Family &amp; giving in ${year}</h2><span class="sub">${esc(famNames || 'Categories in the “Family & Giving” group')}</span></div>
           <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:10px">
-            <div><div class="sub">Total</div><div style="font-size:22px;font-weight:600" class="money">${U.fmt(sent.total)}</div></div>
-            ${home !== 'EUR' ? `<div><div class="sub">In ${home}</div><div style="font-size:22px;font-weight:600" class="money">${U.fmt(sent.totalHome, home, { decimals: 0 })}</div></div>` : ''}
-            <div><div class="sub">Share of spending</div><div style="font-size:22px;font-weight:600">${pct(sent.total / Math.max(1, U.sum(calc.series(year + '-12', 12, 'all'), (m) => m.expense)))}</div></div>
+            <div><div class="sub">Total</div><div style="font-size:22px;font-weight:600" class="money">${U.fmt(fam.total)}</div></div>
+            <div><div class="sub">Per month</div><div style="font-size:22px;font-weight:600" class="money">${U.fmt(fam.perMonth)}</div></div>
+            <div><div class="sub">Share of spending</div><div style="font-size:22px;font-weight:600">${pct(fam.share)}</div></div>
           </div>
-          <div class="chart" id="ch-sent"></div></div>
+          <div class="chart" id="ch-fam"></div></div>
       </div>`;
 
     $$('[data-scope]').forEach((b) => b.addEventListener('click', () => { S.scope = b.dataset.scope; render(); }));
-    drawInsights(ym, sc, groups, cats, sent);
+    drawInsights(ym, sc, groups, cats, fam);
   };
 
-  function drawInsights(ym, sc, groups, cats, sent) {
-    const home = store.settings.homeCurrency || 'NGN';
+  function drawInsights(ym, sc, groups, cats, fam) {
     const series = calc.series(ym, 12, sc);
     charts.columns($('#ch-12m'), series.map((m) => ({
       label: U.monthLabel(m.ym, { month: 'narrow' }), sub: U.monthLabel(m.ym),
@@ -454,10 +451,10 @@
     charts.ranked($('#ch-payees'), calc.topPayees(ym, sc).map((p) => ({ label: p.name, value: p.amount, sub: `${p.count} payment${p.count === 1 ? '' : 's'}` })),
       { onPick: (it) => { Object.assign(S, { q: it.label, cat: '', type: '' }); go('activity'); } });
 
-    charts.columns($('#ch-sent'), sent.months.map((m) => ({
+    charts.columns($('#ch-fam'), fam.months.map((m) => ({
       label: U.monthLabel(m.ym, { month: 'narrow' }), sub: U.monthLabel(m.ym), values: { amount: m.amount },
-      extra: IL.privacy || home === 'EUR' ? '' : '≈ ' + U.fmt(m.home, home, { decimals: 0 }),
-    })), [{ key: 'amount', label: 'Sent home', slot: 3 }], { height: 180, label: 'Money sent home per month' });
+      extra: IL.privacy || !m.spent ? '' : `${pct(m.amount / m.spent)} of spending`,
+    })), [{ key: 'amount', label: 'Family & giving', slot: 3 }], { height: 180, label: 'Money for family and giving per month' });
   }
 
   /* ── Settings ── */
@@ -490,15 +487,14 @@
         <div class="card-h"><h2>Money</h2></div>
         <div class="set-row"><span class="t"><b>Default currency</b><small>Preselected when you add a payment</small></span>
           <select class="chip" id="set-cur">${store.currencies().map((c) => `<option${s.defaultCurrency === c ? ' selected' : ''}>${c}</option>`).join('')}</select></div>
-        <div class="set-row"><span class="t"><b>Home currency</b><small>Shown next to money sent home</small></span>
-          <select class="chip" id="set-home">${store.currencies().map((c) => `<option${(s.homeCurrency || 'NGN') === c ? ' selected' : ''}>${c}</option>`).join('')}</select></div>
+
         <button class="set-row" data-act="currencies"><span class="t"><b>Currencies & exchange rates</b><small>${store.currencies().map((c) => c === 'EUR' ? 'EUR' : `${c} ${U.round2(store.rate(c))}`).join(' · ')}</small></span><span class="chev">›</span></button>
         <button class="set-row" data-act="categories"><span class="t"><b>Categories</b><small>${store.cats().length} active · icons, groups, budgets</small></span><span class="chev">›</span></button>
         <button class="set-row" data-act="rules"><span class="t"><b>Auto-categorise rules</b><small>${store.data.rules.length} rules for bank imports</small></span><span class="chev">›</span></button>
       </div>
       <div class="card">
         <div class="card-h"><h2>Data</h2></div>
-        <button class="set-row" data-act="import"><span class="t"><b>Import bank statement</b><small>Deutsche Bank CSV (other banks usually work too)</small></span><span class="chev">›</span></button>
+        <button class="set-row" data-act="import"><span class="t"><b>Import bank statement</b><small>CSV export from your bank</small></span><span class="chev">›</span></button>
         <button class="set-row" data-act="export"><span class="t"><b>Export transactions</b><small>CSV for Excel or Sheets</small></span><span class="chev">›</span></button>
         <button class="set-row" data-act="backup"><span class="t"><b>Download backup</b><small>Everything as one JSON file</small></span><span class="chev">›</span></button>
         <button class="set-row" data-act="restore"><span class="t"><b>Restore from backup</b><small>Replaces the data on this device</small></span><span class="chev">›</span></button>
@@ -510,7 +506,6 @@
     $('#set-privacy').onchange = (e) => { s.privacy = e.target.checked; store.saveSettings(); renderChrome(); };
     $('#set-theme').onchange = (e) => { s.theme = e.target.value; store.saveSettings(); applyTheme(); };
     $('#set-cur').onchange = (e) => { s.defaultCurrency = e.target.value; store.saveSettings(); };
-    $('#set-home').onchange = (e) => { s.homeCurrency = e.target.value; store.saveSettings(); };
   };
 
   function applyTheme() {
@@ -834,7 +829,7 @@
           <div class="field"><label for="c-group">Group</label><select id="c-group">${groups.map((g) => `<option${g === c.group ? ' selected' : ''}>${g}</option>`).join('')}</select></div></div>
         <div class="field"><label for="c-budget">Monthly budget (EUR, expenses only)</label><input id="c-budget" inputmode="decimal" value="${c.budget || ''}"></div>
         <label class="check"><input type="checkbox" id="c-arch"${c.archived ? ' checked' : ''}> Hide this category</label>
-        <p class="sub">“Sent Home” categories feed the money-sent-home insight.</p>
+        <p class="sub">Categories in “Family &amp; Giving” feed the family &amp; giving insight.</p>
         <div class="modal-actions"><button class="btn primary" type="submit">Save</button></div></form>`,
       onMount(m, close) {
         m.querySelector('#cf').onsubmit = (e) => {
@@ -951,7 +946,8 @@
       wide: true,
       body: `<div id="imp">
         <ol class="steps" style="margin-bottom:14px">
-          <li>In Deutsche Bank online banking open <b>Konto → Umsätze</b> (Transactions) and pick a date range.</li>
+          <li>In your online banking, open your account's transactions and pick a date range.<br>
+            <span class="sub">Deutsche Bank: Konto → Umsätze. Most banks call it “Transactions” or “Umsätze”.</span></li>
           <li>Choose <b>Export → CSV</b> and save the file.</li>
           <li>Select it below. Nothing is imported until you confirm, and duplicates are skipped automatically.</li></ol>
         <label class="btn primary" for="imp-file">Choose CSV file</label><input type="file" id="imp-file" accept=".csv,text/csv,text/plain" hidden></div>`,

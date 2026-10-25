@@ -7,7 +7,8 @@
   const COLL_SHEET = { tx: 'Transactions', cats: 'Categories', goals: 'Goals', rec: 'Recurring', rules: 'Rules' };
 
   // Fixed group order = fixed chart colour slot (colour follows the group, never its rank)
-  const GROUPS = ['Essentials', 'Lifestyle', 'Sent Home', 'Financial'];
+  const FAMILY = 'Family & Giving';
+  const GROUPS = ['Essentials', 'Lifestyle', FAMILY, 'Financial'];
 
   /* ── Starter data (edit freely in the app or the Sheet) ── */
   const SEED_CATS = [
@@ -25,9 +26,9 @@
     ['Fitness & Sport', 'expense', 'Lifestyle', '💪'],
     ['Entertainment', 'expense', 'Lifestyle', '🎉'],
     ['Travel', 'expense', 'Lifestyle', '✈️'],
-    ['Gifts & Donations', 'expense', 'Lifestyle', '🎁'],
-    ['Family Support', 'expense', 'Sent Home', '🏡'],
-    ['Investments Back Home', 'expense', 'Sent Home', '📈'],
+    ['Gifts & Donations', 'expense', 'Family & Giving', '🎁'],
+    ['Family Support', 'expense', 'Family & Giving', '👪'],
+    ['Investments', 'expense', 'Financial', '📈'],
     ['Fees & Charges', 'expense', 'Financial', '🏦'],
     ['Taxes', 'expense', 'Financial', '🧾'],
     ['Loan Refund', 'expense', 'Financial', '💳'],
@@ -66,9 +67,21 @@
   ];
 
   // Starter items added after the first release, so existing installs get them too
-  const SEED_VERSION = 2;
+  const SEED_VERSION = 3;
   const SEED_ADDITIONS = {
     2: { cats: ['Loan Refund'], rules: ['DARLEHEN', 'TILGUNG', 'KREDITRATE', 'LOAN REPAYMENT'] },
+    // "Sent Home" became "Family & Giving" (works whether or not you live abroad); investments are Financial
+    3: {
+      update(c) {
+        const seedId = (n) => 'cat-' + U.hash(n);
+        if (c.id === seedId('Investments Back Home') || c.id === seedId('Nigeria Investments')) {
+          return { ...c, group: 'Financial', name: c.name === 'Investments Back Home' ? 'Investments' : c.name };
+        }
+        if (c.group === 'Sent Home') return { ...c, group: FAMILY };
+        if (c.id === seedId('Gifts & Donations') && c.group === 'Lifestyle') return { ...c, group: FAMILY };
+        return null;
+      },
+    },
   };
 
   // Fallback rates (units per EUR) until the Sheet or the web provides live ones
@@ -77,7 +90,7 @@
   const DEFAULT_SETTINGS = {
     apiUrl: '', apiKey: '', lastSync: 0, lastSyncError: '',
     pinHash: '', pinSalt: '', lockAfterMin: 5, privacy: false,
-    defaultCurrency: 'EUR', homeCurrency: 'NGN', scriptVersion: 0, theme: 'auto', seeded: false, seedVersion: 1,
+    defaultCurrency: 'EUR', scriptVersion: 0, theme: 'auto', seeded: false, seedVersion: 1,
   };
 
   /* ── Normalisers: coerce Sheet strings back to typed values ── */
@@ -164,6 +177,12 @@
           if (this.data.cats.some((c) => c.id === id || c.name.toLowerCase() === name.toLowerCase())) continue;
           this.upsert('cats', { id, name, type, group, icon, budget: 0, order: i - 0.5, archived: false }, { silent: true });
           added++;
+        }
+        if (add.update) {
+          for (const c of [...this.data.cats]) {
+            const next = add.update(c);
+            if (next) { this.upsert('cats', next, { silent: true }); added++; }
+          }
         }
         for (const pattern of add.rules || []) {
           const id = 'rule-' + U.hash(pattern);
@@ -363,16 +382,20 @@
       }
       return Object.values(by).sort((a, b) => b.amount - a.amount).slice(0, n);
     },
-    sentHome(year, home = 'NGN') {
-      const ids = new Set(store.data.cats.filter((c) => c.group === 'Sent Home').map((c) => c.id));
-      const list = store.data.tx.filter((t) => t.type === 'expense' && ids.has(t.category) && t.date.startsWith(String(year)));
-      const months = Array.from({ length: 12 }, (_, i) => ({ ym: `${year}-${String(i + 1).padStart(2, '0')}`, amount: 0, home: 0 }));
-      for (const t of list) {
-        const m = months[Number(t.date.slice(5, 7)) - 1];
-        m.amount += t.amountEUR;
-        m.home += t.currency === home ? t.amount : t.amountEUR * store.rate(home);
-      }
-      return { months, total: U.sum(months, (m) => m.amount), totalHome: U.sum(months, (m) => m.home) };
+    /** Money given to family and others (the "Family & Giving" group) for one month or a whole year. */
+    family(period, scope = 'all') {
+      const ids = new Set(store.data.cats.filter((c) => c.group === FAMILY).map((c) => c.id));
+      return U.sum(calc.txs({ ym: String(period), scope, type: 'expense' }).filter((t) => ids.has(t.category)), (t) => t.amountEUR);
+    },
+    familyYear(year, scope = 'all') {
+      const months = Array.from({ length: 12 }, (_, i) => {
+        const ym = `${year}-${String(i + 1).padStart(2, '0')}`;
+        return { ym, amount: calc.family(ym, scope), spent: calc.totals(ym, scope).expense };
+      });
+      const total = U.sum(months, (m) => m.amount);
+      const spent = U.sum(months, (m) => m.spent);
+      const active = months.filter((m) => m.spent > 0).length;
+      return { months, total, share: spent > 0 ? total / spent : null, perMonth: active ? total / active : 0 };
     },
     goal(g) {
       const saved = g.startAmount + U.sum(store.data.tx.filter((t) => t.type === 'saving' && t.goalId === g.id), (t) => t.amountEUR);
@@ -390,6 +413,7 @@
   IL.store = store;
   IL.calc = calc;
   IL.GROUPS = GROUPS;
+  IL.FAMILY = FAMILY;
   IL.COLL_SHEET = COLL_SHEET;
   IL.FALLBACK_RATES = FALLBACK_RATES;
 })(typeof window !== 'undefined' ? window : globalThis);

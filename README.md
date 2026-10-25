@@ -10,7 +10,7 @@ A private finance app for phone and laptop. Plain HTML/CSS/JS installable as an 
 | **Import** | Deutsche Bank CSV (German or English export, Windows-1252 or UTF-8), auto-categorisation rules (REWE → Groceries, MVV → Transport, Deloitte → Salary…), duplicate detection, learns from your corrections |
 | **Budget** | Monthly limit per category, alerts at 80%, "on pace to overspend" forecast (fixed recurring costs aren't extrapolated), safe-to-spend per day |
 | **Plan** | Savings goals with a required monthly amount, recurring items (rent, salary, subscriptions) that post themselves |
-| **Insights** | 12-month income vs spending, spending pace vs last month, spending by group / category, daily heatmap, top payees, personal vs business, **money sent home** (EUR + ₦) |
+| **Insights** | 12-month income vs spending, spending pace vs last month, spending by group / category, daily heatmap, top payees, personal vs business, **family & giving** |
 | **Privacy** | PIN lock with auto-lock, hide-amounts mode, data only in your browser + your Google account |
 
 ## Run it locally

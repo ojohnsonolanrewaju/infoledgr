@@ -156,14 +156,15 @@ test('budget status and pace', () => {
   const b2 = calc.budgets('2026-10', '2026-10-18').find((x) => x.cat.id === groceries.id);
   assert.strictEqual(b2.status, 'ok'); // 57% spent, projected 78.65 < 84
 });
-test('NGN conversion and sent-home totals', () => {
+test('NGN conversion and family & giving totals', () => {
   store.data.rates.NGN = 1700;
   const fam = store.data.cats.find((c) => c.name === 'Family Support');
   store.upsert('tx', { id: 'ngn1', date: '2026-10-10', type: 'expense', amount: 170000, currency: 'NGN', rate: 1700,
     amountEUR: U.toEUR(170000, 1700), category: fam.id });
-  const s = calc.sentHome(2026);
-  assert.strictEqual(U.round2(s.total), 100);
-  assert.strictEqual(s.totalHome, 170000);
+  assert.strictEqual(U.round2(calc.family('2026-10')), 100);
+  const y = calc.familyYear(2026);
+  assert.strictEqual(U.round2(y.total), 100);
+  assert.ok(y.share > 0 && y.share < 1);
 });
 test('applyRemote replays pending ops', () => {
   const pending = [{ op: 'upsert', sheet: 'Transactions', row: { id: 'p1', date: '2026-10-01', type: 'expense', amount: 5, amountEUR: 5 } }];
@@ -183,12 +184,33 @@ test('existing installs get new starter categories once', () => {
   store.data.cats = store.data.cats.filter((c) => c.id !== loanId);
   store.data.rules = store.data.rules.filter((r) => r.category !== loanId);
   store.settings.seedVersion = 1;
-  assert.strictEqual(store.migrateSeeds(), 5);
+  const before = store.migrateSeeds();
+  assert.ok(before >= 5);
   assert.strictEqual(store.migrateSeeds(), 0);
   assert.strictEqual(store.data.cats.filter((c) => c.name === 'Loan Refund').length, 1);
   assert.strictEqual(store.catName(store.matchRule('DARLEHEN RATE 11/2026', 'expense')), 'Loan Refund');
   const order = store.cats('expense').map((c) => c.name);
   assert.ok(order.indexOf('Loan Refund') < order.indexOf('Other'), 'Other stays last');
+});
+
+test('installs from before Family & Giving are moved over once', () => {
+  for (const k of Object.keys(mem)) delete mem[k];
+  store.load();
+  const id = (n) => 'cat-' + U.hash(n);
+  // an older install: "Sent Home" group, Nigeria Investments in it, Gifts in Lifestyle
+  store.data.cats = store.data.cats.filter((c) => c.name !== 'Investments');
+  store.upsert('cats', { ...store.cat(id('Family Support')), group: 'Sent Home', icon: '🇳🇬' }, { silent: true });
+  store.upsert('cats', { id: id('Nigeria Investments'), name: 'Nigeria Investments', type: 'expense', group: 'Sent Home', icon: '📈' }, { silent: true });
+  store.upsert('cats', { ...store.cat(id('Gifts & Donations')), group: 'Lifestyle' }, { silent: true });
+  store.settings.seedVersion = 2;
+  store.migrateSeeds();
+  assert.strictEqual(store.cat(id('Family Support')).group, 'Family & Giving');
+  assert.strictEqual(store.cat(id('Family Support')).icon, '🇳🇬', 'your icon is kept');
+  assert.strictEqual(store.cat(id('Nigeria Investments')).group, 'Financial');
+  assert.strictEqual(store.cat(id('Gifts & Donations')).group, 'Family & Giving');
+  assert.ok(!store.data.cats.some((c) => c.group === 'Sent Home'));
+  assert.strictEqual(store.migrateSeeds(), 0, 'runs once');
+  assert.strictEqual(store.data.tx.length, 0, 'no transactions touched');
 });
 
 console.log(`\n${passed} tests passed`);

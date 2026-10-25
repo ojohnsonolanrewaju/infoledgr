@@ -1,5 +1,5 @@
 /* InfoLedgr service worker — app shell offline, network for everything else */
-const VERSION = 'infoledgr-v3';
+const VERSION = 'infoledgr-v4';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/config.js', './js/util.js', './js/store.js', './js/sync.js', './js/csv.js', './js/charts.js', './js/app.js',
