@@ -37,7 +37,7 @@
       if (!res.ok) throw new Error('HTTP ' + res.status);
       let json;
       try { json = await res.json(); } catch { throw new Error('Unexpected response — check the Web App URL and that access is set to "Anyone"'); }
-      if (!json.ok) throw new Error(json.error === 'unauthorized' ? 'Wrong API key' : json.error || 'Request failed');
+      if (!json.ok) throw new Error(json.error === 'unauthorized' ? 'the key doesn’t match this Web app URL. Take both from the same Sheet (InfoLedgr → 2. Show connection details)' : json.error || 'Request failed');
       return json;
     },
   };

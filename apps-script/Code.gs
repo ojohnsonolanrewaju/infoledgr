@@ -114,6 +114,17 @@ function showConnection() {
   if (!key) return ui.alert('Run InfoLedgr → 1. Set up this Sheet first.');
   var url = getWebAppUrl_();
   if (!url) return;
+  // Make sure the address really belongs to THIS Sheet's script before handing it out
+  var check = checkWebAppUrl_(url, key);
+  if (check !== 'ok') {
+    props.deleteProperty('WEB_APP_URL');
+    return ui.alert(check === 'other-sheet'
+      ? 'That Web app URL belongs to a different InfoLedgr Sheet (for example your own, or an older copy).\n\n' +
+        'In THIS Sheet open Extensions → Apps Script, then Deploy → Manage deployments, copy the Web app URL there, ' +
+        'and choose InfoLedgr → 2. Show connection details again.'
+      : 'The app can\'t reach that Web app URL.\n\nCheck Deploy → Manage deployments → ✏️ → Who has access: Anyone, ' +
+        'and that you copied the URL ending in /exec. Then choose InfoLedgr → 2. Show connection details again.');
+  }
   var link = APP_URL ? APP_URL.replace(/\/+$/, '') + '/#connect?u=' + encodeURIComponent(url) + '&k=' + encodeURIComponent(key) : '';
   var esc = function (s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
   var box = function (label, value) {
@@ -153,6 +164,20 @@ function getWebAppUrl_() {
   }
   props.setProperty('WEB_APP_URL', url);
   return url;
+}
+
+/** 'ok' | 'other-sheet' (answers, but not to our key) | 'unreachable' (not deployed, not "Anyone", wrong URL) */
+function checkWebAppUrl_(url, key) {
+  try {
+    var res = UrlFetchApp.fetch(url, {
+      method: 'post', contentType: 'text/plain', muteHttpExceptions: true, followRedirects: true,
+      payload: JSON.stringify({ key: key, action: 'ping' }),
+    });
+    var json = JSON.parse(res.getContentText());
+    return json.ok ? 'ok' : json.error === 'unauthorized' ? 'other-sheet' : 'unreachable';
+  } catch (e) {
+    return 'unreachable'; // HTML sign-in/404 page instead of JSON, or network error
+  }
 }
 
 /** Run this if you ever create a new deployment (new URL), then show connection details again. */

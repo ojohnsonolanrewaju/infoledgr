@@ -33,7 +33,7 @@ function makeSpreadsheet(firstTab) {
   };
 }
 
-function load({ bound, serviceUrl = '', promptAnswer = '' }) {
+function load({ bound, serviceUrl = '', promptAnswer = '', fetchAs = 'self' }) {
   const props = {}; const logs = []; let created = null; const ui = { alerts: [], prompts: 0, dialogs: [] };
   const bindingSS = bound ? makeSpreadsheet('Tabellenblatt1') : null;
   const ctx = {
@@ -49,6 +49,9 @@ function load({ bound, serviceUrl = '', promptAnswer = '' }) {
       }),
     },
     ScriptApp: { getService: () => ({ getUrl: () => serviceUrl }) },
+    // 'self' → the URL reaches this script; 'other' → another Sheet's script; 'html' → sign-in page
+    UrlFetchApp: { fetch: (url, o) => ({ getContentText: () =>
+      fetchAs === 'html' ? '<html>Sign in</html>' : fetchAs === 'other' ? '{"ok":false,"error":"unauthorized"}' : api.doPost({ postData: { contents: o.payload } }).text }) },
     HtmlService: { createHtmlOutput: (html) => ({ html, setWidth() { return this; }, setHeight() { return this; } }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: (k) => { delete props[k]; } }) },
     Logger: { log: (m) => logs.push(m) },
@@ -57,8 +60,10 @@ function load({ bound, serviceUrl = '', promptAnswer = '' }) {
     ContentService: { createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
   };
   const src = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Code.gs'), 'utf8');
+  let api;
   const fn = new Function(...Object.keys(ctx), src + '\nreturn { setup, doPost, doGet, showConnection };');
-  return { api: fn(...Object.values(ctx)), props, logs, ui, ss: () => bindingSS || created };
+  api = fn(...Object.values(ctx));
+  return { api, props, logs, ui, ss: () => bindingSS || created };
 }
 
 const post = (api, body) => JSON.parse(api.doPost({ postData: { contents: JSON.stringify(body) } }).text);
@@ -135,6 +140,19 @@ test('a real /exec address is used without asking', () => {
   api.setup(); api.showConnection();
   assert.strictEqual(ui.prompts, 0);
   assert.ok(ui.dialogs[0].includes('AKfyOK/exec'));
+});
+
+test('a URL from a different Sheet is caught before showing the link', () => {
+  const { api, props, ui } = load({ bound: true, promptAnswer: 'https://script.google.com/macros/s/AKfyOTHER/exec', fetchAs: 'other' });
+  api.setup(); api.showConnection();
+  assert.strictEqual(ui.dialogs.length, 0, 'no wrong link handed out');
+  assert.ok(ui.alerts.some((m) => m.includes('different InfoLedgr Sheet')));
+  assert.ok(!props.WEB_APP_URL, 'forgets the wrong URL so it asks again');
+});
+test('an unreachable URL (not "Anyone") is explained', () => {
+  const { api, ui } = load({ bound: true, serviceUrl: 'https://script.google.com/macros/s/AKfyX/exec', fetchAs: 'html' });
+  api.setup(); api.showConnection();
+  assert.ok(ui.alerts.some((m) => m.includes('Who has access: Anyone')));
 });
 
 console.log(`\n${passed} tests passed`);
