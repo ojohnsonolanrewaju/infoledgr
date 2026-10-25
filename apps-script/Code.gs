@@ -31,7 +31,7 @@ var SHEETS = {
 var NUMERIC = ['amount', 'rate', 'amountEUR', 'budget', 'order', 'target', 'startAmount', 'day', 'updatedAt'];
 
 var DEFAULT_CURRENCIES = ['EUR', 'NGN', 'USD', 'GBP'];
-var SCRIPT_VERSION = 2;
+var SCRIPT_VERSION = 3;
 
 // Your hosted app address, e.g. 'https://infoledgr.pages.dev'. Used for the one-tap connect link.
 var APP_URL = '';
@@ -55,6 +55,7 @@ function setup() {
   var keySheet = props.getProperty('KEY_SHEET_ID');
   if (!props.getProperty('API_KEY') || (keySheet && keySheet !== ss.getId())) {
     props.setProperty('API_KEY', Utilities.getUuid().replace(/-/g, ''));
+    props.deleteProperty('WEB_APP_URL');
   }
   props.setProperty('KEY_SHEET_ID', ss.getId());
   Logger.log('✅ Setup complete. Your data Sheet: ' + ss.getUrl());
@@ -107,11 +108,12 @@ function showDeployHelp() {
 }
 
 function showConnection() {
-  var key = PropertiesService.getScriptProperties().getProperty('API_KEY');
-  var url = '';
-  try { url = (ScriptApp.getService().getUrl() || '').replace(/\/dev$/, '/exec'); } catch (e) { /* not deployed */ }
-  if (!key) return SpreadsheetApp.getUi().alert('Run InfoLedgr → 1. Set up this Sheet first.');
-  if (!url) return showDeployHelp();
+  var ui = SpreadsheetApp.getUi();
+  var props = PropertiesService.getScriptProperties();
+  var key = props.getProperty('API_KEY');
+  if (!key) return ui.alert('Run InfoLedgr → 1. Set up this Sheet first.');
+  var url = getWebAppUrl_();
+  if (!url) return;
   var link = APP_URL ? APP_URL.replace(/\/+$/, '') + '/#connect?u=' + encodeURIComponent(url) + '&k=' + encodeURIComponent(key) : '';
   var esc = function (s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
   var box = function (label, value) {
@@ -124,6 +126,38 @@ function showConnection() {
       '<p style="margin-top:18px;color:#5C6589">Or enter these in InfoLedgr → Settings → Connect Google Sheet:</p>' : '<p>Enter these in InfoLedgr → Settings → Connect Google Sheet:</p>') +
     box('Web app URL', url) + box('API key', key) + '</div>';
   SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(520).setHeight(link ? 470 : 300), 'Connect InfoLedgr');
+}
+
+/**
+ * The deployed /exec address. Google's getUrl() sometimes returns the /dev test address,
+ * whose id doesn't work with /exec, so in that case we ask once and remember the answer.
+ */
+function getWebAppUrl_() {
+  var ui = SpreadsheetApp.getUi();
+  var props = PropertiesService.getScriptProperties();
+  var saved = props.getProperty('WEB_APP_URL');
+  if (saved) return saved;
+  var auto = '';
+  try { auto = ScriptApp.getService().getUrl() || ''; } catch (e) { /* not deployed yet */ }
+  if (/\/exec$/.test(auto)) return auto;
+  var res = ui.prompt('One more step',
+    'Paste your Web app URL.\n\nFind it in Extensions → Apps Script → Deploy → Manage deployments ' +
+    '(it starts with https://script.google.com/macros/s/ and ends with /exec).\n\n' +
+    "Haven't deployed yet? Click Cancel and see InfoLedgr → Help: how to deploy.",
+    ui.ButtonSet.OK_CANCEL);
+  if (res.getSelectedButton() !== ui.Button.OK) return '';
+  var url = res.getResponseText().trim();
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) {
+    ui.alert('That doesn\'t look like a Web app URL. It should start with https://script.google.com/macros/s/ and end with /exec. Please try again.');
+    return '';
+  }
+  props.setProperty('WEB_APP_URL', url);
+  return url;
+}
+
+/** Run this if you ever create a new deployment (new URL), then show connection details again. */
+function forgetWebAppUrl() {
+  PropertiesService.getScriptProperties().deleteProperty('WEB_APP_URL');
 }
 
 /** Run this if you lose your key. */

@@ -6,7 +6,7 @@
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = U.esc;
 
-  const SCRIPT_VERSION = 2; // Code.gs version this app expects
+  const SCRIPT_VERSION = 3; // Code.gs version this app expects
   const S = { view: 'home', ym: U.currentYm(), scope: 'all', q: '', type: '', cat: '', txScope: 'all', planTab: 'budgets' };
   const TITLES = { home: 'Home', activity: 'Activity', plan: 'Plan', insights: 'Insights', more: 'Settings' };
 

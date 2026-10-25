@@ -33,8 +33,8 @@ function makeSpreadsheet(firstTab) {
   };
 }
 
-function load({ bound }) {
-  const props = {}; const logs = []; let created = null;
+function load({ bound, serviceUrl = '', promptAnswer = '' }) {
+  const props = {}; const logs = []; let created = null; const ui = { alerts: [], prompts: 0, dialogs: [] };
   const bindingSS = bound ? makeSpreadsheet('Tabellenblatt1') : null;
   const ctx = {
     SpreadsheetApp: {
@@ -42,16 +42,23 @@ function load({ bound }) {
       openById: (id) => { if (created && id === 'FAKE') return created; throw new Error('not found'); },
       create: () => (created = makeSpreadsheet('Sheet1')),
       flush() {},
+      getUi: () => ({
+        alert: (m) => ui.alerts.push(m), showModalDialog: (h) => ui.dialogs.push(h.html),
+        prompt: () => { ui.prompts++; return { getSelectedButton: () => 'OK', getResponseText: () => promptAnswer }; },
+        ButtonSet: { OK_CANCEL: 1 }, Button: { OK: 'OK' },
+      }),
     },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null, setProperty: (k, v) => { props[k] = v; } }) },
+    ScriptApp: { getService: () => ({ getUrl: () => serviceUrl }) },
+    HtmlService: { createHtmlOutput: (html) => ({ html, setWidth() { return this; }, setHeight() { return this; } }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: (k) => { delete props[k]; } }) },
     Logger: { log: (m) => logs.push(m) },
     Utilities: { getUuid: () => 'uuid-' + Math.random().toString(36).slice(2), formatDate: () => '', newBlob: () => ({}), base64Decode: () => [] },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     ContentService: { createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
   };
   const src = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Code.gs'), 'utf8');
-  const fn = new Function(...Object.keys(ctx), src + '\nreturn { setup, doPost, doGet };');
-  return { api: fn(...Object.values(ctx)), props, logs, ss: () => bindingSS || created };
+  const fn = new Function(...Object.keys(ctx), src + '\nreturn { setup, doPost, doGet, showConnection };');
+  return { api: fn(...Object.values(ctx)), props, logs, ui, ss: () => bindingSS || created };
 }
 
 const post = (api, body) => JSON.parse(api.doPost({ postData: { contents: JSON.stringify(body) } }).text);
@@ -104,7 +111,30 @@ test('a copy of a set-up Sheet gets its own key', () => {
 test('ping reports the script version', () => {
   const { api, props } = load({ bound: true });
   api.setup();
-  assert.strictEqual(post(api, { key: props.API_KEY, action: 'ping' }).scriptVersion, 2);
+  assert.strictEqual(post(api, { key: props.API_KEY, action: 'ping' }).scriptVersion, 3);
+});
+
+test('a /dev address from Google is never turned into a fake /exec one', () => {
+  const real = 'https://script.google.com/macros/s/AKfyREAL123/exec';
+  const { api, props, ui } = load({ bound: true, serviceUrl: 'https://script.google.com/macros/s/AKfyHEAD999/dev', promptAnswer: real });
+  api.setup();
+  api.showConnection();
+  assert.strictEqual(ui.prompts, 1, 'asks for the real URL');
+  assert.strictEqual(props.WEB_APP_URL, real);
+  assert.ok(ui.dialogs[0].includes(real) && !ui.dialogs[0].includes('AKfyHEAD999'));
+  api.showConnection();
+  assert.strictEqual(ui.prompts, 1, 'remembers it');
+});
+test('a wrong pasted address is rejected', () => {
+  const { api, props, ui } = load({ bound: true, promptAnswer: 'https://docs.google.com/spreadsheets/d/x/edit' });
+  api.setup(); api.showConnection();
+  assert.ok(!props.WEB_APP_URL && ui.alerts.some((m) => m.includes("doesn't look like")));
+});
+test('a real /exec address is used without asking', () => {
+  const { api, ui } = load({ bound: true, serviceUrl: 'https://script.google.com/macros/s/AKfyOK/exec' });
+  api.setup(); api.showConnection();
+  assert.strictEqual(ui.prompts, 0);
+  assert.ok(ui.dialogs[0].includes('AKfyOK/exec'));
 });
 
 console.log(`\n${passed} tests passed`);
