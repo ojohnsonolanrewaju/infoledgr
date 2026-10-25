@@ -3,6 +3,6 @@
   const IL = (root.IL = root.IL || {});
   IL.config = {
     // "Make a copy" link of your EMPTY template Sheet (ends in /copy). Shown in the connect screen.
-    templateUrl: '',
+    templateUrl: 'https://docs.google.com/spreadsheets/d/1qaSJbqzGkqlc1ZIubtk9nCQ_32ZcLCmWKxRN7Ex6hgo/copy',
   };
 })(typeof window !== 'undefined' ? window : globalThis);
