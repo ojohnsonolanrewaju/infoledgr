@@ -34,7 +34,7 @@ var DEFAULT_CURRENCIES = ['EUR', 'NGN', 'USD', 'GBP'];
 var SCRIPT_VERSION = 3;
 
 // Your hosted app address, e.g. 'https://infoledgr.pages.dev'. Used for the one-tap connect link.
-var APP_URL = '';
+var APP_URL = 'https://infoledgr.pages.dev';
 var RECEIPT_FOLDER = 'InfoLedgr Receipts';
 
 /* ── One-time setup ─────────────────────────────────────────── */
