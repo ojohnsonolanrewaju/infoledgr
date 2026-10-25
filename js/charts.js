@@ -36,8 +36,8 @@
     if (parent) parent.appendChild(n);
     return n;
   };
-  const money = (v) => (IL.privacy ? '€••••' : U.fmt(v, 'EUR'));
-  const moneyShort = (v) => (IL.privacy ? '•••' : U.fmt(v, 'EUR', { compact: true, decimals: 0 }));
+  const money = (v) => (IL.privacy ? U.symbol(IL.baseCurrency || 'EUR') + '••••' : U.fmt(v));
+  const moneyShort = (v) => (IL.privacy ? '•••' : U.fmt(v, undefined, { compact: true, decimals: 0 }));
 
   function niceMax(v) {
     if (v <= 0) return 100;

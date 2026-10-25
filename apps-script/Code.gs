@@ -18,20 +18,21 @@
 
 var SHEETS = {
   Transactions: ['id', 'date', 'type', 'amount', 'currency', 'rate', 'amountEUR', 'category', 'scope',
-                 'payee', 'note', 'goalId', 'receiptUrl', 'source', 'hash', 'recurringId', 'updatedAt'],
+                 'payee', 'note', 'goalId', 'receiptUrl', 'source', 'hash', 'recurringId', 'updatedAt', 'amountBase'],
   Categories:   ['id', 'name', 'type', 'group', 'icon', 'budget', 'order', 'archived', 'updatedAt'],
   Goals:        ['id', 'name', 'target', 'startAmount', 'deadline', 'icon', 'archived', 'updatedAt'],
   Recurring:    ['id', 'name', 'type', 'amount', 'currency', 'category', 'scope', 'payee', 'day',
                  'active', 'startMonth', 'lastPosted', 'updatedAt'],
-  Rules:        ['id', 'pattern', 'category', 'updatedAt']
+  Rules:        ['id', 'pattern', 'category', 'updatedAt'],
+  Settings:     ['id', 'value', 'updatedAt']
 };
 
 // Columns stored as numbers; everything else is forced to plain text so
 // Sheets never turns "2026-10" into a date or "-50 refund" into a formula.
-var NUMERIC = ['amount', 'rate', 'amountEUR', 'budget', 'order', 'target', 'startAmount', 'day', 'updatedAt'];
+var NUMERIC = ['amount', 'rate', 'amountEUR', 'amountBase', 'budget', 'order', 'target', 'startAmount', 'day', 'updatedAt'];
 
 var DEFAULT_CURRENCIES = ['EUR', 'NGN', 'USD', 'GBP'];
-var SCRIPT_VERSION = 3;
+var SCRIPT_VERSION = 4;
 
 // Your hosted app address, e.g. 'https://infoledgr.pages.dev'. Used for the one-tap connect link.
 var APP_URL = 'https://infoledgr.pages.dev';
@@ -352,6 +353,11 @@ function push_(ops) {
 function applySheetOps_(sh, opsById) {
   var lastCol = sh.getLastColumn();
   var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  // Older Sheets: add columns introduced by later versions (e.g. amountBase) so no field is dropped
+  (SHEETS[sh.getName()] || []).forEach(function (h) {
+    if (headers.indexOf(h) === -1) { headers.push(h); sh.getRange(1, headers.length).setValue(h).setFontWeight('bold'); }
+  });
+  lastCol = headers.length;
   var idCol = headers.indexOf('id');
   var updCol = headers.indexOf('updatedAt');
   var lastRow = sh.getLastRow();

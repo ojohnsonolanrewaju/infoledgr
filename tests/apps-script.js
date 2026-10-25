@@ -76,7 +76,7 @@ for (const bound of [false, true]) {
   test('setup runs and creates tabs', () => {
     api.setup();
     const names = ss().sheets.map((s) => s.getName()).sort();
-    assert.deepStrictEqual(names, ['Categories', 'Goals', 'Rates', 'Recurring', 'Rules', 'Transactions']);
+    assert.deepStrictEqual(names, ['Categories', 'Goals', 'Rates', 'Recurring', 'Rules', 'Settings', 'Transactions']);
     assert.ok(props.API_KEY);
     assert.ok(logs.some((l) => String(l).includes(props.API_KEY)));
     if (!bound) assert.strictEqual(props.SPREADSHEET_ID, 'FAKE');
@@ -116,7 +116,7 @@ test('a copy of a set-up Sheet gets its own key', () => {
 test('ping reports the script version', () => {
   const { api, props } = load({ bound: true });
   api.setup();
-  assert.strictEqual(post(api, { key: props.API_KEY, action: 'ping' }).scriptVersion, 3);
+  assert.strictEqual(post(api, { key: props.API_KEY, action: 'ping' }).scriptVersion, 4);
 });
 
 test('a /dev address from Google is never turned into a fake /exec one', () => {
@@ -157,6 +157,19 @@ test('an address the self-test cannot reach asks for the real one, then shows it
   assert.strictEqual(ui.dialogs.length, 1, 'still shows the details');
   assert.ok(ui.dialogs[0].includes(pasted) && ui.dialogs[0].includes("Couldn't double-check"));
   assert.strictEqual(props.WEB_APP_URL, pasted);
+});
+
+test('older Sheets get new columns on push (amountBase) and keep the value', () => {
+  const { api, props, ss } = load({ bound: true });
+  api.setup();
+  const tx = ss().getSheetByName('Transactions');
+  // simulate an old Sheet without the amountBase column
+  tx.rows[0] = tx.rows[0].filter((h) => h !== 'amountBase');
+  post(api, { key: props.API_KEY, action: 'push', ops: [{ op: 'upsert', sheet: 'Transactions', row: { id: 'n1', date: '2026-10-25', amount: 5000, currency: 'NGN', amountBase: 5000, updatedAt: 1 } }] });
+  const { data } = post(api, { key: props.API_KEY, action: 'pull' });
+  assert.strictEqual(data.Transactions[0].amountBase, 5000);
+  post(api, { key: props.API_KEY, action: 'push', ops: [{ op: 'upsert', sheet: 'Settings', row: { id: 'baseCurrency', value: 'NGN', updatedAt: 1 } }] });
+  assert.strictEqual(post(api, { key: props.API_KEY, action: 'pull' }).data.Settings[0].value, 'NGN');
 });
 
 console.log(`\n${passed} tests passed`);

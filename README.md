@@ -6,7 +6,7 @@ A private finance app for phone and laptop. Plain HTML/CSS/JS installable as an 
 
 | Area | Features |
 |---|---|
-| **Track** | 5-second entry (amount → category → done), expense / income / saving, EUR + NGN + USD + GBP (add more), receipt photos, personal vs business flag, search & filters |
+| **Track** | 5-second entry (amount → category → done), expense / income / saving, any **main currency** (₦, €, £, $…) with payments in other currencies converted on the day, receipt photos, personal vs business flag, search & filters |
 | **Import** | Deutsche Bank CSV (German or English export, Windows-1252 or UTF-8), auto-categorisation rules (REWE → Groceries, MVV → Transport, Deloitte → Salary…), duplicate detection, learns from your corrections |
 | **Budget** | Monthly limit per category, alerts at 80%, "on pace to overspend" forecast (fixed recurring costs aren't extrapolated), safe-to-spend per day |
 | **Plan** | Savings goals with a required monthly amount, recurring items (rent, salary, subscriptions) that post themselves |
@@ -99,7 +99,7 @@ Your data is never in the repo or on the host. Only the app code is.
 
 ## How sync works
 
-Every change is saved locally first and queued. A sync pushes the queue (last write wins, by `updatedAt`), then pulls the whole Sheet. Recurring items use deterministic IDs (`rec-<id>-<YYYY-MM>`), so two devices can never post the same rent twice. Each transaction stores the exchange rate from the day it was entered, so past EUR totals never shift.
+Every change is saved locally first and queued. A sync pushes the queue (last write wins, by `updatedAt`), then pulls the whole Sheet. Recurring items use deterministic IDs (`rec-<id>-<YYYY-MM>`), so two devices can never post the same rent twice. Each transaction stores its value in your main currency from the day it was entered, so past totals never shift. The main currency lives in the Sheet's `Settings` tab, so all your devices agree.
 
 ## Security notes
 

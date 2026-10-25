@@ -6,12 +6,13 @@
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = U.esc;
 
-  const SCRIPT_VERSION = 3; // Code.gs version this app expects
+  const SCRIPT_VERSION = 4; // Code.gs version this app expects
   const S = { view: 'home', ym: U.currentYm(), scope: 'all', q: '', type: '', cat: '', txScope: 'all', planTab: 'budgets' };
   const TITLES = { home: 'Home', activity: 'Activity', plan: 'Plan', insights: 'Insights', more: 'Settings' };
 
   /* ── Formatting helpers ── */
-  const M = (v, cur = 'EUR', o = {}) => `<span class="money">${U.fmt(v, cur, o)}</span>`;
+  const B = () => store.base();
+  const M = (v, cur = B(), o = {}) => `<span class="money">${U.fmt(v, cur, o)}</span>`;
   const pct = (x) => (x == null ? '—' : Math.round(x * 100) + '%');
   const ICON = {
     sync: '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16m0 4v-4h-4"/></svg>',
@@ -22,7 +23,7 @@
   const STATUS = {
     over: { icon: '!', cls: 'over', text: (b) => `Over by ${U.fmt(-b.remaining)}` },
     warn: { icon: '!', cls: 'warn', text: (b) => (b.remaining <= 0.005 ? 'Budget fully used' : `${pct(b.pct)} used · ${U.fmt(b.remaining)} left`) },
-    pace: { icon: '↗', cls: 'pace', text: (b) => `On pace for ${U.fmt(b.projected, 'EUR', { decimals: 0 })}` },
+    pace: { icon: '↗', cls: 'pace', text: (b) => `On pace for ${U.fmt(b.projected, B(), { decimals: 0 })}` },
     ok:   { icon: '✓', cls: 'ok', text: (b) => `${U.fmt(b.remaining)} left` },
     none: { icon: '·', cls: 'none', text: () => 'No budget set' },
   };
@@ -148,7 +149,7 @@
     const name = t.payee || label;
     const sign = t.type === 'income' ? 1 : -1;
     const cls = t.type === 'income' ? 'amt-in' : t.type === 'saving' ? 'amt-save' : '';
-    const foreign = t.currency !== 'EUR';
+    const foreign = t.currency !== B();
     const sub = [t.payee ? label : '', t.note && t.note !== 'Recurring' ? t.note : '', t.source === 'recurring' ? '↻ recurring' : '']
       .filter(Boolean).join(' · ');
     return `<button class="tx" data-act="edit-tx" data-id="${esc(t.id)}">
@@ -156,7 +157,7 @@
       <span class="tx-main"><span class="tx-name">${esc(name)}${t.scope === 'business' ? '<span class="badge biz">BIZ</span>' : ''}${t.receiptUrl ? ' 📎' : ''}</span>
       <span class="tx-sub">${esc(sub || U.dayLabel(t.date))}</span></span>
       <span class="tx-amt ${cls}">${M(sign * t.amount, t.currency, { sign: t.type === 'income' })}
-      ${foreign ? `<small>${M(t.amountEUR, 'EUR')}</small>` : ''}</span></button>`;
+      ${foreign ? `<small>${M(t.amountBase)}</small>` : ''}</span></button>`;
   }
 
   function budgetRow(b) {
@@ -164,10 +165,45 @@
     const w = b.budget > 0 ? Math.min(100, (b.spent / b.budget) * 100) : 100;
     return `<button class="budget" data-act="edit-budget" data-id="${b.cat.id}">
       <span class="budget-top"><span>${b.cat.icon}</span><span class="budget-name">${esc(b.cat.name)}</span>
-      <span class="budget-amt"><b>${M(b.spent)}</b>${b.budget > 0 ? ` <span class="muted">/ ${M(b.budget, 'EUR', { decimals: 0 })}</span>` : ''}</span></span>
+      <span class="budget-amt"><b>${M(b.spent)}</b>${b.budget > 0 ? ` <span class="muted">/ ${M(b.budget, B(), { decimals: 0 })}</span>` : ''}</span></span>
       <span class="bar"><b class="${st.cls}" style="width:${b.status === 'none' ? 0 : w}%"></b></span>
       <span class="budget-status"><span class="st-${st.cls}">${st.icon} ${esc(st.text(b))}</span>
       ${b.budget > 0 && b.status !== 'over' ? `<span>${pct(b.pct)}</span>` : ''}</span></button>`;
+  }
+
+  /* ── Main currency ── */
+  const COMMON_CURRENCIES = ['NGN', 'EUR', 'GBP', 'USD', 'GHS', 'KES', 'ZAR', 'CAD', 'CHF'];
+  function currencyOptions(selected) {
+    const list = [...new Set([...COMMON_CURRENCIES, ...store.currencies()])];
+    return list.map((c) => `<option value="${c}"${c === selected ? ' selected' : ''}>${U.symbol(c).trim()} ${c}</option>`).join('');
+  }
+
+  async function changeBase(next, select) {
+    const prev = B();
+    if (next === prev) return;
+    const undo = () => { if (select) select.value = prev; };
+    if (sync.configured() && (store.settings.scriptVersion || 1) < 4) {
+      undo();
+      toast('Update your Sheet script first (see “Updating the script” in the README), then try again.', { ms: 7000 });
+      return;
+    }
+    const others = store.data.tx.filter((t) => t.currency !== next).length;
+    if (store.data.tx.length || store.data.goals.length || store.cats('expense').some((c) => c.budget > 0)) {
+      const ok = await confirmDialog(`Show everything in ${next} instead of ${prev}?` +
+        (others ? ` Payments made in other currencies (${others}) are converted at today's rate.` : '') +
+        ' Budgets and goals are converted too. Payments made in ' + next + ' keep their exact amounts.',
+        { title: 'Change main currency', ok: `Switch to ${next}` });
+      if (!ok) return undo();
+    }
+    try {
+      if (!store.data.rates[next]) await sync.addCurrency(next); // fetch its exchange rate first
+      store.setBase(next);
+      sync.schedule();
+      toast(`Main currency is now ${next}`);
+    } catch (e) {
+      undo();
+      toast('Could not switch: ' + e.message);
+    }
   }
 
   /* ════════════════════ VIEWS ════════════════════ */
@@ -194,6 +230,8 @@
     $('#view').innerHTML = `
       ${empty ? `<div class="card"><div class="card-h" style="display:block"><h2>Welcome to InfoLedgr 👋</h2>
         <p style="font-weight:500;margin-top:2px">Your personal income, expense &amp; budget tracker</p></div>
+        <div class="set-row" style="padding:4px 0 14px"><span class="t"><b>Your main currency</b><small>Totals, budgets and charts are shown in it</small></span>
+          <select class="chip" id="welcome-base" aria-label="Main currency">${currencyOptions(B())}</select></div>
         <p class="sub" style="margin-bottom:14px">Start by adding a payment, importing your bank statement, or connecting your Google Sheet so your phone and laptop stay in sync.</p>
         <div class="onboard"><button class="btn primary" data-act="add">＋ Add a transaction</button>
         <button class="btn" data-act="import">⬆ Import bank CSV</button>
@@ -201,8 +239,8 @@
       <div class="grid2">
         <div class="card hero">
           <div class="label">${U.monthLabel(ym)} · net</div>
-          <div class="big money">${U.fmt(t.net, 'EUR', { sign: true })}</div>
-          <div class="meta">${t.income <= 0 ? 'No income recorded yet this month' : t.net >= 0 ? `You kept ${pct(t.savingsRate)} of your income` : `Spending is ${U.fmt(-t.net, 'EUR', { decimals: 0 })} ahead of income so far`}</div>
+          <div class="big money">${U.fmt(t.net, B(), { sign: true })}</div>
+          <div class="meta">${t.income <= 0 ? 'No income recorded yet this month' : t.net >= 0 ? `You kept ${pct(t.savingsRate)} of your income` : `Spending is ${U.fmt(-t.net, B(), { decimals: 0 })} ahead of income so far`}</div>
           <div class="hero-row">
             <div class="hero-stat"><div class="k">Income</div><div class="v">${M(t.income)}</div></div>
             <div class="hero-stat"><div class="k">Spent</div><div class="v">${M(t.expense)}</div></div>
@@ -210,7 +248,7 @@
           </div>
           ${totalBudget > 0 ? `<div class="pace">
             <div class="pace-bar"><b style="width:${Math.min(100, (spentBudgeted / totalBudget) * 100)}%"></b>${ym === nowYm ? `<i style="left:${(elapsed / dim) * 100}%" title="Today"></i>` : ''}</div>
-            <div class="pace-txt"><span>${M(spentBudgeted)} of ${M(totalBudget, 'EUR', { decimals: 0 })} budget</span>
+            <div class="pace-txt"><span>${M(spentBudgeted)} of ${M(totalBudget, B(), { decimals: 0 })} budget</span>
             <span>${daysLeft ? `${M(Math.max(0, (totalBudget - spentBudgeted) / daysLeft))}/day · ${daysLeft} days left` : totalBudget - spentBudgeted >= 0 ? 'Within budget ✓' : 'Over budget'}</span></div>
           </div>` : `<div class="pace-txt" style="margin-top:14px"><span>No budgets yet</span><button class="link" style="color:#9DB5FF" data-act="bulk-budgets">Set budgets →</button></div>`}
         </div>
@@ -239,17 +277,19 @@
           ${goals.length ? goals.map(goalRow).join('') : '<p class="empty">Create a goal — an emergency fund, a holiday, a new laptop.</p>'}
         </div>
       </div>`;
+    const wb = $('#welcome-base');
+    if (wb) wb.onchange = (e) => changeBase(e.target.value, e.target);
   };
 
   function goalRow(g) {
     const p = calc.goal(g);
     const sub = p.saved >= g.target ? 'Goal reached 🎉'
-      : p.perMonth != null ? `${U.fmt(p.perMonth, 'EUR', { decimals: 0 })}/month to reach it by ${U.monthLabel(g.deadline.slice(0, 7), { month: 'short', year: 'numeric' })}`
-      : `${U.fmt(p.remaining, 'EUR', { decimals: 0 })} to go`;
+      : p.perMonth != null ? `${U.fmt(p.perMonth, B(), { decimals: 0 })}/month to reach it by ${U.monthLabel(g.deadline.slice(0, 7), { month: 'short', year: 'numeric' })}`
+      : `${U.fmt(p.remaining, B(), { decimals: 0 })} to go`;
     return `<div class="goal">
       <div class="goal-top"><span class="goal-ico">${g.icon}</span>
         <button style="flex:1;text-align:left;min-width:0" data-act="goal-edit" data-id="${g.id}"><b style="font-weight:600">${esc(g.name)}</b><br>
-        <span class="sub">${M(p.saved, 'EUR', { decimals: 0 })} of ${M(g.target, 'EUR', { decimals: 0 })}</span></button>
+        <span class="sub">${M(p.saved, B(), { decimals: 0 })} of ${M(g.target, B(), { decimals: 0 })}</span></button>
         <button class="btn sm" data-act="goal-add" data-id="${g.id}">＋ Add</button></div>
       <div class="bar"><b style="width:${p.pct * 100}%"></b></div>
       <div class="budget-status"><span>${esc(sub)}</span><span>${pct(p.pct)}</span></div></div>`;
@@ -298,14 +338,14 @@
     if (!box) return;
     const list = filteredTx();
     const shown = list.slice(0, 400);
-    const inc = U.sum(list.filter((t) => t.type === 'income'), (t) => t.amountEUR);
-    const out = U.sum(list.filter((t) => t.type === 'expense'), (t) => t.amountEUR);
+    const inc = U.sum(list.filter((t) => t.type === 'income'), (t) => t.amountBase);
+    const out = U.sum(list.filter((t) => t.type === 'expense'), (t) => t.amountBase);
     const days = U.groupBy(shown, (t) => t.date);
     box.innerHTML = `
       <p class="sub" style="padding:2px 4px">${list.length} transaction${list.length === 1 ? '' : 's'} ${S.q ? 'found across all months' : 'in ' + U.monthLabel(S.ym)}
-        · <span class="amt-in">${M(inc, 'EUR', { sign: true })}</span> · ${M(-out)}</p>
+        · <span class="amt-in">${M(inc, B(), { sign: true })}</span> · ${M(-out)}</p>
       ${Object.entries(days).map(([d, txs]) => `
-        <div class="tx-day"><span>${U.dayLabel(d)}${S.q ? ' ' + d.slice(0, 4) : ''}</span><span class="money">${((s) => (s ? U.fmt(-s) : ''))(U.sum(txs.filter((t) => t.type === 'expense'), (t) => t.amountEUR))}</span></div>
+        <div class="tx-day"><span>${U.dayLabel(d)}${S.q ? ' ' + d.slice(0, 4) : ''}</span><span class="money">${((s) => (s ? U.fmt(-s) : ''))(U.sum(txs.filter((t) => t.type === 'expense'), (t) => t.amountBase))}</span></div>
         <div class="tx-list">${txs.map(txRow).join('')}</div>`).join('') || '<div class="card"><p class="empty">No transactions match. Tap ＋ to add one.</p></div>'}
       ${list.length > shown.length ? `<p class="sub" style="text-align:center;padding:10px">Showing the newest 400 — refine your search to see more.</p>` : ''}`;
   }
@@ -324,7 +364,7 @@
         <div class="card">
           <div class="card-h"><h2>${U.monthLabel(S.ym)}</h2><button class="link" data-act="bulk-budgets">Edit all budgets</button></div>
           ${tb > 0 ? `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-              <div><span style="font-size:26px;font-weight:600" class="money">${U.fmt(ts)}</span> <span class="muted">of ${M(tb, 'EUR', { decimals: 0 })}</span></div>
+              <div><span style="font-size:26px;font-weight:600" class="money">${U.fmt(ts)}</span> <span class="muted">of ${M(tb, B(), { decimals: 0 })}</span></div>
               <span class="st-${status}" style="font-size:13px">${STATUS[status].icon} ${tb - ts >= 0 ? U.fmt(tb - ts) + ' left' : 'Over by ' + U.fmt(ts - tb)}</span></div>
             <div class="bar" style="height:10px"><b class="${status}" style="width:${Math.min(100, (ts / tb) * 100)}%"></b></div>`
             : `<p class="sub">Give each category a monthly limit. InfoLedgr warns you at 80%, when you're on pace to overspend, and when you go over.</p>
@@ -399,13 +439,13 @@
           <div class="legend"><span><i style="background:var(--s1)"></i>${U.monthLabel(ym, { month: 'long' })}</span><span><i class="dash"></i>${U.monthLabel(U.addMonths(ym, -1), { month: 'long' })}</span></div></div>
         <div class="card"><div class="card-h"><h2>Where it went</h2><span class="sub">${U.monthLabel(ym, { month: 'long' })}</span></div>
           <div class="donut-wrap"><div id="ch-donut"></div>
-          <div class="donut-legend">${groups.map((g) => `<div><i style="background:var(--s${g.slot})"></i><span>${g.group}</span><b class="money">${U.fmt(g.amount, 'EUR', { decimals: 0 })}</b></div>`).join('')}</div></div></div>
+          <div class="donut-legend">${groups.map((g) => `<div><i style="background:var(--s${g.slot})"></i><span>${g.group}</span><b class="money">${U.fmt(g.amount, B(), { decimals: 0 })}</b></div>`).join('')}</div></div></div>
         <div class="card"><div class="card-h"><h2>By category</h2><span class="sub">tap to see payments</span></div><div id="ch-cats"></div></div>
         <div class="card"><div class="card-h"><h2>Daily spending</h2><span class="sub">tap a day</span></div><div id="ch-cal"></div></div>
         <div class="card"><div class="card-h"><h2>Top payees</h2></div><div id="ch-payees"></div></div>
         <div class="card"><div class="card-h"><h2>Personal vs business</h2><span class="sub">${U.monthLabel(ym, { month: 'long' })}</span></div>
-          <div class="set-row"><span class="tx-ico">👤</span><span class="t"><b>Personal</b><small>Spent ${M(pers.expense)} · income ${M(pers.income)}</small></span><b class="money">${U.fmt(pers.net, 'EUR', { sign: true })}</b></div>
-          <div class="set-row"><span class="tx-ico">🏢</span><span class="t"><b>Business / side hustle</b><small>Spent ${M(biz.expense)} · income ${M(biz.income)}</small></span><b class="money">${U.fmt(biz.net, 'EUR', { sign: true })}</b></div>
+          <div class="set-row"><span class="tx-ico">👤</span><span class="t"><b>Personal</b><small>Spent ${M(pers.expense)} · income ${M(pers.income)}</small></span><b class="money">${U.fmt(pers.net, B(), { sign: true })}</b></div>
+          <div class="set-row"><span class="tx-ico">🏢</span><span class="t"><b>Business / side hustle</b><small>Spent ${M(biz.expense)} · income ${M(biz.income)}</small></span><b class="money">${U.fmt(biz.net, B(), { sign: true })}</b></div>
           <p class="sub" style="margin-top:8px">Mark a payment as Business when you add it. Handy for your tax return.</p></div>
         <div class="card span2"><div class="card-h"><h2>👪 Family &amp; giving in ${year}</h2><span class="sub">${esc(famNames || 'Categories in the “Family & Giving” group')}</span></div>
           <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:10px">
@@ -425,7 +465,7 @@
     charts.columns($('#ch-12m'), series.map((m) => ({
       label: U.monthLabel(m.ym, { month: 'narrow' }), sub: U.monthLabel(m.ym),
       values: { income: m.income, expense: m.expense },
-      extra: `Net ${IL.privacy ? '••••' : U.fmt(m.net, 'EUR', { sign: true })}`,
+      extra: `Net ${IL.privacy ? '••••' : U.fmt(m.net, B(), { sign: true })}`,
     })), [{ key: 'income', label: 'Income', slot: 1 }, { key: 'expense', label: 'Spent', slot: 2 }], { label: 'Income and spending for the last 12 months' });
 
     const nowYm = U.currentYm();
@@ -439,11 +479,11 @@
 
     const total = U.sum(groups, (g) => g.amount);
     charts.donut($('#ch-donut'), groups.map((g) => ({ label: g.group, value: g.amount, slot: g.slot })),
-      { center: IL.privacy ? '€••••' : U.fmt(total, 'EUR', { decimals: 0 }), centerSub: 'spent', label: 'Spending by group' });
+      { center: IL.privacy ? U.symbol(B()) + '••••' : U.fmt(total, B(), { decimals: 0 }), centerSub: 'spent', label: 'Spending by group' });
 
     charts.ranked($('#ch-cats'), cats.slice(0, 10).map((c) => ({
       label: c.cat?.name || 'Uncategorised', icon: c.cat?.icon, value: c.amount, id: c.id,
-      sub: c.cat?.budget > 0 ? `${pct(c.amount / c.cat.budget)} of ${U.fmt(c.cat.budget, 'EUR', { decimals: 0 })} budget` : '',
+      sub: c.cat?.budget > 0 ? `${pct(c.amount / c.cat.budget)} of ${U.fmt(c.cat.budget, B(), { decimals: 0 })} budget` : '',
     })), { onPick: (it) => { Object.assign(S, { cat: it.id, q: '', type: '', txScope: sc }); go('activity'); } });
 
     charts.calendar($('#ch-cal'), calc.daily(ym, sc), ym, { onPick: (d) => { Object.assign(S, { q: d, cat: '', type: '' }); go('activity'); } });
@@ -485,6 +525,8 @@
       </div>
       <div class="card">
         <div class="card-h"><h2>Money</h2></div>
+        <div class="set-row"><span class="t"><b>Main currency</b><small>Totals, budgets, goals and charts</small></span>
+          <select class="chip" id="set-base">${currencyOptions(B())}</select></div>
         <div class="set-row"><span class="t"><b>Default currency</b><small>Preselected when you add a payment</small></span>
           <select class="chip" id="set-cur">${store.currencies().map((c) => `<option${s.defaultCurrency === c ? ' selected' : ''}>${c}</option>`).join('')}</select></div>
 
@@ -506,6 +548,7 @@
     $('#set-privacy').onchange = (e) => { s.privacy = e.target.checked; store.saveSettings(); renderChrome(); };
     $('#set-theme').onchange = (e) => { s.theme = e.target.value; store.saveSettings(); applyTheme(); };
     $('#set-cur').onchange = (e) => { s.defaultCurrency = e.target.value; store.saveSettings(); };
+    $('#set-base').onchange = (e) => changeBase(e.target.value, e.target);
   };
 
   function applyTheme() {
@@ -524,7 +567,7 @@
   function openTxForm(existing, preset = {}) {
     const isEdit = !!existing;
     const t = existing ? { ...existing } : {
-      type: 'expense', amount: '', currency: store.settings.defaultCurrency || 'EUR', date: U.today(), payee: '', note: '',
+      type: 'expense', amount: '', currency: store.settings.defaultCurrency || B(), date: U.today(), payee: '', note: '',
       scope: 'personal', category: '', goalId: '', receiptUrl: '', ...preset,
     };
     let receiptData = null; // new photo (data URL) chosen in this form
@@ -563,7 +606,10 @@
         const amt = m.querySelector('#tx-amt'), cur = m.querySelector('#tx-cur');
         const conv = () => {
           const a = U.num(amt.value), c = cur.value;
-          m.querySelector('#tx-conv').textContent = c !== 'EUR' && a ? `≈ ${U.fmt(U.toEUR(a, store.rate(c)), 'EUR')} at ${U.round2(store.rate(c))} ${c}/€` : '';
+          const per = store.rate(c) / store.rate(B()); // units of c per 1 main-currency unit
+          const show = (n) => (n >= 10 ? Math.round(n).toLocaleString('en-GB') : String(U.round2(n)));
+          const rateTxt = per >= 1 ? `1 ${B()} = ${show(per)} ${c}` : `1 ${c} = ${show(1 / per)} ${B()}`;
+          m.querySelector('#tx-conv').textContent = c !== B() && a ? `≈ ${U.fmt(store.toBase(a, c))} (${rateTxt})` : '';
         };
         const paintType = () => {
           m.querySelectorAll('[data-ttype]').forEach((b) => b.classList.toggle('on', b.dataset.ttype === t.type));
@@ -635,6 +681,9 @@
           const rate = isEdit && currency === existing.currency && existing.rate ? existing.rate : store.rate(currency);
           const row = {
             ...t, id: t.id || U.uid('t'), amount, currency, rate, amountEUR: U.toEUR(amount, rate),
+            amountBase: isEdit && currency === existing.currency && existing.amount
+              ? U.round2(existing.amountBase * (amount / existing.amount)) // keep the entry-day value
+              : store.toBase(amount, currency, rate),
             date: m.querySelector('#tx-date').value || U.today(),
             payee: m.querySelector('#tx-payee').value.trim(), note: m.querySelector('#tx-note').value.trim(),
             goalId: t.type === 'saving' ? m.querySelector('#tx-goal').value : '',
@@ -667,7 +716,7 @@
   /* ── Budgets ── */
   function avgSpend(catId, months = 3) {
     let total = 0;
-    for (let i = 1; i <= months; i++) total += U.sum(calc.txs({ ym: U.addMonths(U.currentYm(), -i), type: 'expense' }).filter((t) => t.category === catId), (t) => t.amountEUR);
+    for (let i = 1; i <= months; i++) total += U.sum(calc.txs({ ym: U.addMonths(U.currentYm(), -i), type: 'expense' }).filter((t) => t.category === catId), (t) => t.amountBase);
     return total / months;
   }
 
@@ -676,9 +725,9 @@
     const avg = avgSpend(catId);
     modal({
       title: `${c.icon} ${c.name}`,
-      body: `<form class="form" id="bf"><div class="field"><label for="b-amt">Monthly budget (EUR)</label>
+      body: `<form class="form" id="bf"><div class="field"><label for="b-amt">Monthly budget (${B()})</label>
         <input id="b-amt" inputmode="decimal" value="${c.budget || ''}" placeholder="0 = no budget"></div>
-        <p class="sub">${avg > 0 ? `You spent about ${U.fmt(avg, 'EUR', { decimals: 0 })}/month here over the last 3 months.` : 'No spending history here yet.'}</p>
+        <p class="sub">${avg > 0 ? `You spent about ${U.fmt(avg, B(), { decimals: 0 })}/month here over the last 3 months.` : 'No spending history here yet.'}</p>
         <div class="toolbar"><button type="button" class="btn sm" data-a="see">See payments</button></div>
         <div class="modal-actions"><button class="btn primary" type="submit">Save</button></div></form>`,
       onMount(m, close) {
@@ -697,14 +746,14 @@
     const cats = store.cats('expense');
     modal({
       title: 'Monthly budgets',
-      body: `<p class="sub" style="margin-bottom:12px">Amounts in EUR. The hint shows your average over the last 3 months. Leave empty for no budget.</p>
+      body: `<p class="sub" style="margin-bottom:12px">Amounts in ${B()}. The hint shows your average over the last 3 months. Leave empty for no budget.</p>
         <form class="form" id="bbf">${IL.GROUPS.map((g) => {
           const list = cats.filter((c) => c.group === g || (g === 'Financial' && !IL.GROUPS.includes(c.group)));
           if (!list.length) return '';
           return `<p class="section-title">${g}</p>` + list.map((c) => {
             const avg = avgSpend(c.id);
             return `<div class="set-row" style="padding:8px 0"><span>${c.icon}</span><span class="t"><b>${esc(c.name)}</b>
-              <small>${avg > 0 ? `avg ${U.fmt(avg, 'EUR', { decimals: 0 })}` : '&nbsp;'}</small></span>
+              <small>${avg > 0 ? `avg ${U.fmt(avg, B(), { decimals: 0 })}` : '&nbsp;'}</small></span>
               <input class="input" style="width:110px;height:40px" inputmode="decimal" data-bid="${c.id}" value="${c.budget || ''}" placeholder="${avg > 0 ? Math.round(avg) : '—'}" aria-label="${esc(c.name)} budget"></div>`;
           }).join('');
         }).join('')}
@@ -735,7 +784,7 @@
       body: `<form class="form" id="gf">
         <div class="row" style="grid-template-columns:70px 1fr"><div class="field"><label for="g-icon">Icon</label><input id="g-icon" value="${esc(g.icon)}" maxlength="4"></div>
           <div class="field"><label for="g-name">Name</label><input id="g-name" value="${esc(g.name)}" placeholder="Emergency fund" required></div></div>
-        <div class="row"><div class="field"><label for="g-target">Target (EUR)</label><input id="g-target" inputmode="decimal" value="${g.target || ''}" required></div>
+        <div class="row"><div class="field"><label for="g-target">Target (${B()})</label><input id="g-target" inputmode="decimal" value="${g.target || ''}" required></div>
           <div class="field"><label for="g-start">Already saved</label><input id="g-start" inputmode="decimal" value="${g.startAmount || ''}" placeholder="0"></div></div>
         <div class="field"><label for="g-dl">Target date (optional)</label><input id="g-dl" type="date" value="${g.deadline || ''}"></div>
         <div class="modal-actions">${isEdit ? '<button type="button" class="btn danger" id="g-del">Archive</button>' : ''}<button class="btn primary" type="submit">Save</button></div></form>`,
@@ -757,7 +806,7 @@
   /* ── Recurring ── */
   function recForm(r) {
     const isEdit = !!r;
-    r = r || { name: '', type: 'expense', amount: '', currency: 'EUR', category: '', scope: 'personal', payee: '', day: 1, active: true, startMonth: U.currentYm() };
+    r = r || { name: '', type: 'expense', amount: '', currency: B(), category: '', scope: 'personal', payee: '', day: 1, active: true, startMonth: U.currentYm() };
     const opts = (type) => store.cats(type).map((c) => `<option value="${c.id}"${c.id === r.category ? ' selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('');
     modal({
       title: isEdit ? 'Edit recurring item' : 'New recurring item',
@@ -802,7 +851,7 @@
   /* ── Categories, rules, currencies ── */
   function categoriesModal() {
     const list = (type) => store.cats(type, true).map((c) => `<button class="set-row" data-cid="${c.id}"${c.archived ? ' style="opacity:.5"' : ''}>
-      <span class="tx-ico">${c.icon}</span><span class="t"><b>${esc(c.name)}</b><small>${esc(c.group)}${c.budget ? ' · budget ' + U.fmt(c.budget, 'EUR', { decimals: 0 }) : ''}${c.archived ? ' · hidden' : ''}</small></span><span class="chev">›</span></button>`).join('');
+      <span class="tx-ico">${c.icon}</span><span class="t"><b>${esc(c.name)}</b><small>${esc(c.group)}${c.budget ? ' · budget ' + U.fmt(c.budget, B(), { decimals: 0 }) : ''}${c.archived ? ' · hidden' : ''}</small></span><span class="chev">›</span></button>`).join('');
     const close = modal({
       title: 'Categories',
       body: `<button class="btn sm primary" data-a="new" style="margin-bottom:8px">＋ New category</button>
@@ -827,7 +876,7 @@
           <div class="field"><label for="c-name">Name</label><input id="c-name" value="${esc(c.name)}" required></div></div>
         <div class="row"><div class="field"><label for="c-type">Type</label><select id="c-type"${isEdit ? ' disabled' : ''}><option value="expense">Expense</option><option value="income"${c.type === 'income' ? ' selected' : ''}>Income</option></select></div>
           <div class="field"><label for="c-group">Group</label><select id="c-group">${groups.map((g) => `<option${g === c.group ? ' selected' : ''}>${g}</option>`).join('')}</select></div></div>
-        <div class="field"><label for="c-budget">Monthly budget (EUR, expenses only)</label><input id="c-budget" inputmode="decimal" value="${c.budget || ''}"></div>
+        <div class="field"><label for="c-budget">Monthly budget (${B()}, expenses only)</label><input id="c-budget" inputmode="decimal" value="${c.budget || ''}"></div>
         <label class="check"><input type="checkbox" id="c-arch"${c.archived ? ' checked' : ''}> Hide this category</label>
         <p class="sub">Categories in “Family &amp; Giving” feed the family &amp; giving insight.</p>
         <div class="modal-actions"><button class="btn primary" type="submit">Save</button></div></form>`,
@@ -876,7 +925,7 @@
       body: `<p class="sub" style="margin-bottom:12px">Rates are units per 1 EUR. ${live ? 'They update from Google Finance in your Sheet’s “Rates” tab — overwrite a cell there to fix a rate.' : 'They update daily from a free exchange-rate service; you can also set them by hand.'}
         Each transaction keeps the rate from the day you entered it, so past totals never shift.</p>
         <div class="form">${store.currencies().map((c) => `<div class="set-row" style="padding:8px 0"><span class="t"><b>${c} ${U.symbol(c).trim()}</b></span>
-          ${c === 'EUR' ? '<span class="muted">base</span>' : `<input class="input" style="width:130px;height:40px" inputmode="decimal" data-rate="${c}" value="${store.rate(c)}"${live ? ' disabled' : ''}>`}</div>`).join('')}
+          ${c === 'EUR' ? '<span class="muted">rates are per 1 EUR</span>' : `<input class="input" style="width:130px;height:40px" inputmode="decimal" data-rate="${c}" value="${store.rate(c)}"${live ? ' disabled' : ''}>`}</div>`).join('')}
         <form class="row" id="cur-f" style="grid-template-columns:1fr auto;align-items:end">
           <div class="field"><label for="cur-new">Add currency (3-letter code)</label><input id="cur-new" maxlength="3" placeholder="CHF" style="text-transform:uppercase"></div>
           <button class="btn" style="height:46px">Add</button></form>
@@ -1031,7 +1080,7 @@
       const chosen = drafts.filter((d) => d.include);
       store.bulkUpsert('tx', chosen.map((d) => {
         const rate = store.rate(d.currency);
-        return { id: U.uid('t'), date: d.date, type: d.type, amount: d.amount, currency: d.currency, rate, amountEUR: U.toEUR(d.amount, rate),
+        return { id: U.uid('t'), date: d.date, type: d.type, amount: d.amount, currency: d.currency, rate, amountEUR: U.toEUR(d.amount, rate), amountBase: store.toBase(d.amount, d.currency, rate),
           category: d.category, scope: d.scope, payee: d.payee, note: d.note, source: 'csv', hash: d.hash };
       }));
       if (box.querySelector('#imp-learn').checked) {

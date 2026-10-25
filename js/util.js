@@ -44,7 +44,7 @@
     /* ── Money ── */
     symbol(cur) { return CURRENCY_SYMBOLS[cur] || cur + ' '; },
     round2(n) { return Math.round((Number(n) || 0) * 100) / 100; },
-    fmt(amount, cur = 'EUR', opts = {}) {
+    fmt(amount, cur = root.IL.baseCurrency || 'EUR', opts = {}) {
       const n = Number(amount) || 0;
       const abs = Math.abs(n);
       const digits = opts.decimals ?? (abs >= 1000 && opts.compact !== false ? 0 : 2);

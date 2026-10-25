@@ -4,7 +4,7 @@
   const U = IL.util;
 
   const KEYS = { data: 'il_data_v1', queue: 'il_queue_v1', settings: 'il_settings_v1' };
-  const COLL_SHEET = { tx: 'Transactions', cats: 'Categories', goals: 'Goals', rec: 'Recurring', rules: 'Rules' };
+  const COLL_SHEET = { prefs: 'Settings', tx: 'Transactions', cats: 'Categories', goals: 'Goals', rec: 'Recurring', rules: 'Rules' };
 
   // Fixed group order = fixed chart colour slot (colour follows the group, never its rank)
   const FAMILY = 'Family & Giving';
@@ -94,11 +94,21 @@
   };
 
   /* ── Normalisers: coerce Sheet strings back to typed values ── */
+  function legacyBase(r) {
+    const base = store.base();
+    if ((r.currency || 'EUR') === base) return U.num(r.amount);
+    const eur = r.amountEUR === '' || r.amountEUR == null ? U.toEUR(r.amount, r.rate) : U.num(r.amountEUR);
+    return base === 'EUR' ? eur : U.round2(eur * store.rate(base));
+  }
+
   const NORM = {
+    prefs: (r) => ({ id: String(r.id), value: String(r.value ?? ''), updatedAt: U.num(r.updatedAt) }),
     tx: (r) => ({
       id: String(r.id), date: String(r.date).slice(0, 10), type: r.type || 'expense',
       amount: U.num(r.amount), currency: r.currency || 'EUR', rate: U.num(r.rate) || 1,
       amountEUR: r.amountEUR === '' || r.amountEUR == null ? U.toEUR(r.amount, r.rate) : U.num(r.amountEUR),
+      // value in the main currency, fixed on the day it was entered; older rows predate it
+      amountBase: r.amountBase === '' || r.amountBase == null ? legacyBase(r) : U.num(r.amountBase),
       category: String(r.category || ''), scope: r.scope || 'personal',
       payee: String(r.payee ?? ''), note: String(r.note ?? ''), goalId: String(r.goalId ?? ''),
       receiptUrl: String(r.receiptUrl ?? ''), source: r.source || 'manual', hash: String(r.hash ?? ''),
@@ -125,7 +135,7 @@
     rules: (r) => ({ id: String(r.id), pattern: String(r.pattern), category: String(r.category), updatedAt: U.num(r.updatedAt) }),
   };
 
-  const emptyData = () => ({ tx: [], cats: [], goals: [], rec: [], rules: [], rates: { ...FALLBACK_RATES }, ratesAt: 0 });
+  const emptyData = () => ({ prefs: [], tx: [], cats: [], goals: [], rec: [], rules: [], rates: { ...FALLBACK_RATES }, ratesAt: 0 });
 
   const ls = {
     get(k, d) { try { const v = root.localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
@@ -140,6 +150,7 @@
 
     load() {
       this.data = Object.assign(emptyData(), ls.get(KEYS.data, {}));
+      IL.baseCurrency = this.base();
       this.queue = ls.get(KEYS.queue, []);
       this.settings = Object.assign({ ...DEFAULT_SETTINGS }, ls.get(KEYS.settings, {}));
       if (!this.settings.seeded && !this.data.cats.length) this.seed();
@@ -223,8 +234,12 @@
     /** Replace local data with the Sheet's, then replay changes made while syncing. */
     applyRemote(remote, pendingOps = []) {
       const d = emptyData();
-      for (const [coll, sheet] of Object.entries(COLL_SHEET)) d[coll] = (remote[sheet] || []).map(NORM[coll]);
-      d.rates = Object.assign({}, this.data.rates, remote.Rates || {});
+      // main currency and rates first: older transactions are converted with them
+      this.data.prefs = d.prefs = (remote.Settings || []).map(NORM.prefs);
+      for (const op of pendingOps) if (op.sheet === 'Settings') this.data.prefs = d.prefs = [...d.prefs.filter((p) => p.id !== op.row.id), op.row];
+      this.data.rates = d.rates = Object.assign({}, this.data.rates, remote.Rates || {});
+      IL.baseCurrency = this.base();
+      for (const [coll, sheet] of Object.entries(COLL_SHEET)) if (coll !== 'prefs') d[coll] = (remote[sheet] || []).map(NORM[coll]);
       d.ratesAt = Date.now();
       const sheetToColl = Object.fromEntries(Object.entries(COLL_SHEET).map(([c, s]) => [s, c]));
       for (const op of pendingOps) {
@@ -235,6 +250,7 @@
         else if (i >= 0) list[i] = op.row; else list.push(op.row);
       }
       this.data = d;
+      IL.baseCurrency = this.base();
       this.save();
     },
 
@@ -254,7 +270,43 @@
         .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
     },
     rate(cur) { return this.data.rates[cur] || FALLBACK_RATES[cur] || 1; },
-    currencies() { return Object.keys(this.data.rates).sort((a, b) => (a === 'EUR' ? -1 : b === 'EUR' ? 1 : a.localeCompare(b))); },
+    currencies() {
+      const base = this.base();
+      return Object.keys(this.data.rates).sort((a, b) => (a === base ? -1 : b === base ? 1 : a === 'EUR' ? -1 : b === 'EUR' ? 1 : a.localeCompare(b)));
+    },
+
+    /** The currency totals, budgets and goals are shown in. Shared across devices via the Sheet. */
+    base() { return (this.data.prefs || []).find((p) => p.id === 'baseCurrency')?.value || 'EUR'; },
+    /** Value of an amount in the main currency, using today's rates (or the given entry rate). */
+    toBase(amount, currency, rate = this.rate(currency)) {
+      const base = this.base();
+      if (currency === base) return U.round2(amount);
+      return U.round2(U.toEUR(amount, rate) * this.rate(base));
+    },
+    /**
+     * Switch the main currency. Payments made in the new currency keep their exact amounts;
+     * others, plus budgets and goals, are converted at today's rate.
+     */
+    setBase(next) {
+      const prev = this.base();
+      if (next === prev) return;
+      const factor = this.rate(next) / this.rate(prev);
+      const nice = (v) => { if (!v) return v; const p = Math.pow(10, Math.max(0, Math.floor(Math.log10(v)) - 2)); return Math.round(v / p) * p; };
+      this.upsert('prefs', { id: 'baseCurrency', value: next }, { silent: true });
+      IL.baseCurrency = next;
+      for (const t of this.data.tx) {
+        const v = t.currency === next ? t.amount : U.round2(t.amountEUR * this.rate(next));
+        if (v !== t.amountBase) this.upsert('tx', { ...t, amountBase: v }, { silent: true, keepTime: false });
+      }
+      for (const c of this.data.cats) if (c.budget > 0) this.upsert('cats', { ...c, budget: nice(c.budget * factor) }, { silent: true });
+      for (const g of this.data.goals) {
+        this.upsert('goals', { ...g, target: nice(g.target * factor), startAmount: U.round2(g.startAmount * factor) }, { silent: true });
+      }
+      this.settings.defaultCurrency = next;
+      this.saveSettings();
+      this.save();
+      this.emit('change');
+    },
 
     /* ── Recurring engine: posts due items once per month, idempotent across devices ── */
     postRecurring(todayStr = U.today()) {
@@ -273,7 +325,7 @@
             const rate = this.rate(r.currency);
             this.upsert('tx', {
               id, date: `${ym}-${String(dueDay).padStart(2, '0')}`, type: r.type, amount: r.amount,
-              currency: r.currency, rate, amountEUR: U.toEUR(r.amount, rate), category: r.category,
+              currency: r.currency, rate, amountEUR: U.toEUR(r.amount, rate), amountBase: this.toBase(r.amount, r.currency, rate), category: r.category,
               scope: r.scope, payee: r.payee || r.name, note: 'Recurring', source: 'recurring', recurringId: r.id,
             }, { silent: true });
             posted++;
@@ -310,9 +362,9 @@
     },
     totals(ym, scope = 'all') {
       const list = calc.txs({ ym, scope });
-      const income = U.sum(list.filter((t) => t.type === 'income'), (t) => t.amountEUR);
-      const expense = U.sum(list.filter((t) => t.type === 'expense'), (t) => t.amountEUR);
-      const saving = U.sum(list.filter((t) => t.type === 'saving'), (t) => t.amountEUR);
+      const income = U.sum(list.filter((t) => t.type === 'income'), (t) => t.amountBase);
+      const expense = U.sum(list.filter((t) => t.type === 'expense'), (t) => t.amountBase);
+      const saving = U.sum(list.filter((t) => t.type === 'saving'), (t) => t.amountBase);
       return {
         income, expense, saving, net: income - expense,
         leftover: income - expense - saving,
@@ -322,14 +374,14 @@
     },
     byCategory(ym, scope = 'all', type = 'expense') {
       const by = {};
-      for (const t of calc.txs({ ym, scope, type })) by[t.category] = (by[t.category] || 0) + t.amountEUR;
+      for (const t of calc.txs({ ym, scope, type })) by[t.category] = (by[t.category] || 0) + t.amountBase;
       return Object.entries(by).map(([id, amount]) => ({ id, cat: store.cat(id), amount })).sort((a, b) => b.amount - a.amount);
     },
     byGroup(ym, scope = 'all') {
       const by = Object.fromEntries(GROUPS.map((g) => [g, 0]));
       for (const t of calc.txs({ ym, scope, type: 'expense' })) {
         const g = store.cat(t.category)?.group;
-        by[GROUPS.includes(g) ? g : 'Financial'] += t.amountEUR;
+        by[GROUPS.includes(g) ? g : 'Financial'] += t.amountBase;
       }
       return GROUPS.map((g, i) => ({ group: g, slot: i + 1, amount: by[g] }));
     },
@@ -337,7 +389,7 @@
       const spent = Object.fromEntries(calc.byCategory(ym, 'all').map((x) => [x.id, x.amount]));
       // Recurring payments (rent, passes) are fixed — only day-to-day spending is extrapolated
       const fixed = {};
-      for (const t of calc.txs({ ym, type: 'expense' })) if (t.source === 'recurring') fixed[t.category] = (fixed[t.category] || 0) + t.amountEUR;
+      for (const t of calc.txs({ ym, type: 'expense' })) if (t.source === 'recurring') fixed[t.category] = (fixed[t.category] || 0) + t.amountBase;
       const dim = U.daysInMonth(ym);
       const nowYm = todayStr.slice(0, 7);
       const elapsed = ym < nowYm ? dim : ym > nowYm ? 0 : Number(todayStr.slice(8, 10));
@@ -364,7 +416,7 @@
       const days = Array.from({ length: dim }, (_, i) => ({ day: i + 1, amount: 0, count: 0 }));
       for (const t of calc.txs({ ym, scope, type: 'expense' })) {
         const d = days[Number(t.date.slice(8, 10)) - 1];
-        if (d) { d.amount += t.amountEUR; d.count++; }
+        if (d) { d.amount += t.amountBase; d.count++; }
       }
       return days;
     },
@@ -377,7 +429,7 @@
       for (const t of calc.txs({ ym, scope, type: 'expense' })) {
         const k = (t.payee || store.catName(t.category)).trim();
         by[k] = by[k] || { name: k, amount: 0, count: 0 };
-        by[k].amount += t.amountEUR;
+        by[k].amount += t.amountBase;
         by[k].count++;
       }
       return Object.values(by).sort((a, b) => b.amount - a.amount).slice(0, n);
@@ -385,7 +437,7 @@
     /** Money given to family and others (the "Family & Giving" group) for one month or a whole year. */
     family(period, scope = 'all') {
       const ids = new Set(store.data.cats.filter((c) => c.group === FAMILY).map((c) => c.id));
-      return U.sum(calc.txs({ ym: String(period), scope, type: 'expense' }).filter((t) => ids.has(t.category)), (t) => t.amountEUR);
+      return U.sum(calc.txs({ ym: String(period), scope, type: 'expense' }).filter((t) => ids.has(t.category)), (t) => t.amountBase);
     },
     familyYear(year, scope = 'all') {
       const months = Array.from({ length: 12 }, (_, i) => {
@@ -398,7 +450,7 @@
       return { months, total, share: spent > 0 ? total / spent : null, perMonth: active ? total / active : 0 };
     },
     goal(g) {
-      const saved = g.startAmount + U.sum(store.data.tx.filter((t) => t.type === 'saving' && t.goalId === g.id), (t) => t.amountEUR);
+      const saved = g.startAmount + U.sum(store.data.tx.filter((t) => t.type === 'saving' && t.goalId === g.id), (t) => t.amountBase);
       const pct = g.target > 0 ? Math.min(1, saved / g.target) : 0;
       let perMonth = null;
       if (g.deadline && saved < g.target) {

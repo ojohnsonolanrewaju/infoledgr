@@ -213,4 +213,56 @@ test('installs from before Family & Giving are moved over once', () => {
   assert.strictEqual(store.data.tx.length, 0, 'no transactions touched');
 });
 
+console.log('main currency');
+test('new installs and your existing data default to EUR', () => {
+  for (const k of Object.keys(mem)) delete mem[k];
+  store.load();
+  assert.strictEqual(store.base(), 'EUR');
+  store.upsert('tx', { id: 'e1', date: '2026-10-01', type: 'expense', amount: 10, currency: 'EUR', rate: 1, amountEUR: 10 });
+  assert.strictEqual(store.data.tx[0].amountBase, 10, 'old rows without amountBase use their EUR value');
+});
+test('a naira user sees naira payments exactly, and others converted on the day', () => {
+  for (const k of Object.keys(mem)) delete mem[k];
+  store.load();
+  store.data.rates = { EUR: 1, NGN: 1500, GBP: 0.85, USD: 1.1 };
+  store.setBase('NGN');
+  assert.strictEqual(store.base(), 'NGN');
+  assert.strictEqual(IL.baseCurrency, 'NGN');
+  const groceries = store.data.cats.find((c) => c.name === 'Groceries').id;
+  store.upsert('tx', { id: 'n1', date: '2026-10-02', type: 'expense', amount: 25000, currency: 'NGN', rate: 1500,
+    amountEUR: U.toEUR(25000, 1500), amountBase: store.toBase(25000, 'NGN', 1500), category: groceries });
+  store.upsert('tx', { id: 'e1', date: '2026-10-03', type: 'expense', amount: 10, currency: 'EUR', rate: 1,
+    amountEUR: 10, amountBase: store.toBase(10, 'EUR', 1), category: groceries });
+  assert.strictEqual(store.data.tx.find((t) => t.id === 'n1').amountBase, 25000);
+  assert.strictEqual(store.data.tx.find((t) => t.id === 'e1').amountBase, 15000);
+  store.data.rates.NGN = 1700; // rates move later…
+  assert.strictEqual(calc.totals('2026-10').expense, 40000, '…but history does not drift');
+  assert.strictEqual(U.fmt(1234), '₦1,234');
+});
+test('switching main currency converts budgets and goals, keeps same-currency payments exact', () => {
+  for (const k of Object.keys(mem)) delete mem[k];
+  store.load();
+  store.data.rates = { EUR: 1, NGN: 1500 };
+  const g = store.data.cats.find((c) => c.name === 'Groceries');
+  store.upsert('cats', { ...g, budget: 400 });
+  store.upsert('goals', { id: 'g1', name: 'Fund', target: 1000, startAmount: 100 });
+  store.upsert('tx', { id: 'n1', date: '2026-10-02', type: 'expense', amount: 30000, currency: 'NGN', rate: 1500, amountEUR: 20, category: g.id });
+  store.setBase('NGN');
+  assert.strictEqual(store.cat(g.id).budget, 600000);
+  assert.strictEqual(store.data.goals[0].target, 1500000);
+  assert.strictEqual(store.data.goals[0].startAmount, 150000);
+  assert.strictEqual(store.data.tx[0].amountBase, 30000);
+  assert.ok(store.queue.some((o) => o.sheet === 'Settings' && o.row.value === 'NGN'), 'shared to other devices via the Sheet');
+  store.setBase('EUR');
+  assert.strictEqual(store.data.tx[0].amountBase, 20);
+});
+test('main currency arrives from the Sheet before transactions are read', () => {
+  for (const k of Object.keys(mem)) delete mem[k];
+  store.load();
+  store.applyRemote({ Settings: [{ id: 'baseCurrency', value: 'NGN' }], Rates: { EUR: 1, NGN: 1500 },
+    Transactions: [{ id: 'old', date: '2026-10-01', type: 'expense', amount: '2000', currency: 'NGN', rate: '1500', amountEUR: '1.33' }] });
+  assert.strictEqual(store.base(), 'NGN');
+  assert.strictEqual(store.data.tx[0].amountBase, 2000);
+});
+
 console.log(`\n${passed} tests passed`);

@@ -141,7 +141,7 @@
 
       const rawPayee = (r[map.payee] || '').replace(/\s+/g, ' ').trim();
       const purpose = (r[map.purpose] || '').replace(/\s+/g, ' ').trim();
-      const currency = (/^[A-Z]{3}$/.test(r[map.currency] || '') ? r[map.currency] : 'EUR');
+      const currency = (/^[A-Z]{3}$/.test(r[map.currency] || '') ? r[map.currency] : store.base());
       const type = amt < 0 ? 'expense' : 'income';
       const hash = U.hash([date, amt.toFixed(2), rawPayee.toUpperCase(), purpose.toUpperCase()].join('|'));
       const mid = extractMerchant(rawPayee, purpose);
@@ -176,11 +176,11 @@
 
   /** Export transactions as a CSV string (Excel/Sheets friendly). */
   function exportCsv(txs, store) {
-    const head = ['Date', 'Type', 'Amount', 'Currency', 'Amount EUR', 'Category', 'Group', 'Scope', 'Payee', 'Note', 'Receipt'];
+    const head = ['Date', 'Type', 'Amount', 'Currency', `Amount ${store.base()}`, 'Category', 'Group', 'Scope', 'Payee', 'Note', 'Receipt'];
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = txs.map((t) => {
       const c = store.cat(t.category);
-      return [t.date, t.type, t.amount, t.currency, t.amountEUR, c?.name, c?.group, t.scope, t.payee, t.note,
+      return [t.date, t.type, t.amount, t.currency, t.amountBase, c?.name, c?.group, t.scope, t.payee, t.note,
         t.receiptUrl === 'local' ? '' : t.receiptUrl].map(q).join(',');
     });
     return '﻿' + [head.map(q).join(','), ...lines].join('\n');
