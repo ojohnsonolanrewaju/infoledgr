@@ -163,7 +163,7 @@ test('NGN conversion and sent-home totals', () => {
     amountEUR: U.toEUR(170000, 1700), category: fam.id });
   const s = calc.sentHome(2026);
   assert.strictEqual(U.round2(s.total), 100);
-  assert.strictEqual(s.totalNGN, 170000);
+  assert.strictEqual(s.totalHome, 170000);
 });
 test('applyRemote replays pending ops', () => {
   const pending = [{ op: 'upsert', sheet: 'Transactions', row: { id: 'p1', date: '2026-10-01', type: 'expense', amount: 5, amountEUR: 5 } }];

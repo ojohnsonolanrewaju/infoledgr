@@ -6,6 +6,7 @@
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = U.esc;
 
+  const SCRIPT_VERSION = 2; // Code.gs version this app expects
   const S = { view: 'home', ym: U.currentYm(), scope: 'all', q: '', type: '', cat: '', txScope: 'all', planTab: 'budgets' };
   const TITLES = { home: 'Home', activity: 'Activity', plan: 'Plan', insights: 'Insights', more: 'Settings' };
 
@@ -79,6 +80,14 @@
   function onHash() {
     const h = location.hash.slice(1);
     if (h === 'add') { history.replaceState(null, '', '#' + S.view); openTxForm(); return; }
+    if (h.startsWith('connect?')) {
+      // One-tap link from the Sheet's InfoLedgr menu: #connect?u=<web app url>&k=<key>
+      const p = new URLSearchParams(h.slice(8));
+      history.replaceState(null, '', '#more'); // don't leave the key in the address bar
+      S.view = 'more'; render();
+      connectModal({ url: p.get('u') || '', key: p.get('k') || '' });
+      return;
+    }
     S.view = TITLES[h] ? h : 'home';
     render();
     window.scrollTo(0, 0);
@@ -175,6 +184,7 @@
     const elapsed = ym < nowYm ? dim : ym > nowYm ? 0 : Number(U.today().slice(8));
     const daysLeft = ym === nowYm ? dim - elapsed + 1 : 0;
     const alerts = budgets.filter((b) => ['over', 'warn', 'pace'].includes(b.status)).slice(0, 4);
+    const home = store.settings.homeCurrency || 'NGN';
     const sentIds = new Set(store.data.cats.filter((c) => c.group === 'Sent Home').map((c) => c.id));
     const sentHome = U.sum(calc.txs({ ym, type: 'expense' }).filter((x) => sentIds.has(x.category)), (x) => x.amountEUR);
     const biz = calc.totals(ym, 'business');
@@ -215,7 +225,7 @@
         </div>
       </div>
       <div class="tiles">
-        <div class="tile"><div class="k">🇳🇬 Sent home</div><div class="v">${M(sentHome)}</div><div class="d money">≈ ${U.fmt(sentHome * store.rate('NGN'), 'NGN', { decimals: 0 })}</div></div>
+        <div class="tile"><div class="k">🌍 Sent home</div><div class="v">${M(sentHome)}</div><div class="d money">${home !== 'EUR' ? `≈ ${U.fmt(sentHome * store.rate(home), home, { decimals: 0 })}` : '&nbsp;'}</div></div>
         <div class="tile"><div class="k">🏢 Business spend</div><div class="v">${M(biz.expense)}</div><div class="d">Income ${M(biz.income)}</div></div>
         <div class="tile"><div class="k">Top category</div><div class="v">${top ? `${top.cat?.icon || ''} ${M(top.amount)}` : '—'}</div><div class="d">${top ? esc(top.cat?.name || '') : 'No spending yet'}</div></div>
         <div class="tile"><div class="k">Transactions</div><div class="v num">${t.count}</div><div class="d">${t.expense > 0 && elapsed ? `${M(t.expense / elapsed)} / day avg` : '&nbsp;'}</div></div>
@@ -369,7 +379,9 @@
     const groups = calc.byGroup(ym, sc);
     const cats = calc.byCategory(ym, sc);
     const year = ym.slice(0, 4);
-    const sent = calc.sentHome(year);
+    const home = store.settings.homeCurrency || 'NGN';
+    const sent = calc.sentHome(year, home);
+    const sentNames = store.cats('expense').filter((c) => c.group === 'Sent Home').map((c) => c.name).join(' + ');
     const pers = calc.totals(ym, 'personal'), biz = calc.totals(ym, 'business');
 
     $('#view').innerHTML = `
@@ -397,10 +409,10 @@
           <div class="set-row"><span class="tx-ico">👤</span><span class="t"><b>Personal</b><small>Spent ${M(pers.expense)} · income ${M(pers.income)}</small></span><b class="money">${U.fmt(pers.net, 'EUR', { sign: true })}</b></div>
           <div class="set-row"><span class="tx-ico">🏢</span><span class="t"><b>Business (Infolytics)</b><small>Spent ${M(biz.expense)} · income ${M(biz.income)}</small></span><b class="money">${U.fmt(biz.net, 'EUR', { sign: true })}</b></div>
           <p class="sub" style="margin-top:8px">Mark a payment as Business when you add it. Handy for your tax return.</p></div>
-        <div class="card span2"><div class="card-h"><h2>🇳🇬 Sent home in ${year}</h2><span class="sub">Family Support + Nigeria Investments</span></div>
+        <div class="card span2"><div class="card-h"><h2>🌍 Sent home in ${year}</h2><span class="sub">${esc(sentNames || 'Categories in the “Sent Home” group')}</span></div>
           <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:10px">
             <div><div class="sub">Total</div><div style="font-size:22px;font-weight:600" class="money">${U.fmt(sent.total)}</div></div>
-            <div><div class="sub">In naira</div><div style="font-size:22px;font-weight:600" class="money">${U.fmt(sent.totalNGN, 'NGN', { decimals: 0 })}</div></div>
+            ${home !== 'EUR' ? `<div><div class="sub">In ${home}</div><div style="font-size:22px;font-weight:600" class="money">${U.fmt(sent.totalHome, home, { decimals: 0 })}</div></div>` : ''}
             <div><div class="sub">Share of spending</div><div style="font-size:22px;font-weight:600">${pct(sent.total / Math.max(1, U.sum(calc.series(year + '-12', 12, 'all'), (m) => m.expense)))}</div></div>
           </div>
           <div class="chart" id="ch-sent"></div></div>
@@ -411,6 +423,7 @@
   };
 
   function drawInsights(ym, sc, groups, cats, sent) {
+    const home = store.settings.homeCurrency || 'NGN';
     const series = calc.series(ym, 12, sc);
     charts.columns($('#ch-12m'), series.map((m) => ({
       label: U.monthLabel(m.ym, { month: 'narrow' }), sub: U.monthLabel(m.ym),
@@ -443,7 +456,7 @@
 
     charts.columns($('#ch-sent'), sent.months.map((m) => ({
       label: U.monthLabel(m.ym, { month: 'narrow' }), sub: U.monthLabel(m.ym), values: { amount: m.amount },
-      extra: IL.privacy ? '' : '≈ ' + U.fmt(m.ngn, 'NGN', { decimals: 0 }),
+      extra: IL.privacy || home === 'EUR' ? '' : '≈ ' + U.fmt(m.home, home, { decimals: 0 }),
     })), [{ key: 'amount', label: 'Sent home', slot: 3 }], { height: 180, label: 'Money sent home per month' });
   }
 
@@ -458,6 +471,7 @@
         ${configured ? `
           <div class="set-row"><span class="t"><b>Last sync</b><small>${ago(s.lastSync)}${store.queue.length ? ` · ${store.queue.length} change(s) waiting` : ''}</small></span></div>
           ${s.lastSyncError && sync.status === 'error' ? `<div class="set-row"><span class="t"><b style="color:var(--bad-text)">Error</b><small>${esc(s.lastSyncError)}</small></span></div>` : ''}
+          ${s.scriptVersion && s.scriptVersion < SCRIPT_VERSION ? `<div class="set-row"><span class="t"><b>Sheet script update available</b><small>Optional. Adds the InfoLedgr menu in your Sheet. See “Updating the script” in the README.</small></span></div>` : ''}
           <div class="toolbar" style="margin-top:8px"><button class="btn sm primary" data-act="sync-now">Sync now</button><button class="btn sm danger" data-act="disconnect">Disconnect</button></div>`
         : `<p class="sub" style="margin-bottom:12px">Right now your data lives only in this browser. Connect a Google Sheet to sync between phone and laptop, keep a backup, and store receipt photos in Google Drive.</p>
            <button class="btn primary" data-act="connect">Connect Google Sheet</button>`}
@@ -476,6 +490,8 @@
         <div class="card-h"><h2>Money</h2></div>
         <div class="set-row"><span class="t"><b>Default currency</b><small>Preselected when you add a payment</small></span>
           <select class="chip" id="set-cur">${store.currencies().map((c) => `<option${s.defaultCurrency === c ? ' selected' : ''}>${c}</option>`).join('')}</select></div>
+        <div class="set-row"><span class="t"><b>Home currency</b><small>Shown next to money sent home</small></span>
+          <select class="chip" id="set-home">${store.currencies().map((c) => `<option${(s.homeCurrency || 'NGN') === c ? ' selected' : ''}>${c}</option>`).join('')}</select></div>
         <button class="set-row" data-act="currencies"><span class="t"><b>Currencies & exchange rates</b><small>${store.currencies().map((c) => c === 'EUR' ? 'EUR' : `${c} ${U.round2(store.rate(c))}`).join(' · ')}</small></span><span class="chev">›</span></button>
         <button class="set-row" data-act="categories"><span class="t"><b>Categories</b><small>${store.cats().length} active · icons, groups, budgets</small></span><span class="chev">›</span></button>
         <button class="set-row" data-act="rules"><span class="t"><b>Auto-categorise rules</b><small>${store.data.rules.length} rules for bank imports</small></span><span class="chev">›</span></button>
@@ -488,12 +504,13 @@
         <button class="set-row" data-act="restore"><span class="t"><b>Restore from backup</b><small>Replaces the data on this device</small></span><span class="chev">›</span></button>
         <button class="set-row" data-act="wipe"><span class="t"><b style="color:var(--bad-text)">Erase this device</b><small>Removes local data and settings. Your Google Sheet is not touched.</small></span></button>
       </div>
-      <p class="sub span2" style="text-align:center;padding:8px">InfoLedgr v1.0 · built for Olumide · ${store.data.tx.length} transactions on this device</p>
+      <p class="sub span2" style="text-align:center;padding:8px">InfoLedgr v1.1 · ${store.data.tx.length} transactions on this device</p>
     </div>`;
     $('#set-lock').onchange = (e) => { s.lockAfterMin = Number(e.target.value); store.saveSettings(); };
     $('#set-privacy').onchange = (e) => { s.privacy = e.target.checked; store.saveSettings(); renderChrome(); };
     $('#set-theme').onchange = (e) => { s.theme = e.target.value; store.saveSettings(); applyTheme(); };
     $('#set-cur').onchange = (e) => { s.defaultCurrency = e.target.value; store.saveSettings(); };
+    $('#set-home').onchange = (e) => { s.homeCurrency = e.target.value; store.saveSettings(); };
   };
 
   function applyTheme() {
@@ -886,19 +903,25 @@
   }
 
   /* ── Google Sheets connection ── */
-  function connectModal() {
+  function connectModal(prefill = {}) {
+    const tpl = IL.config && IL.config.templateUrl;
+    const url = prefill.url || store.settings.apiUrl, key = prefill.key || store.settings.apiKey;
     modal({
       title: 'Connect Google Sheet',
       wide: true,
-      body: `<ol class="steps" style="margin-bottom:16px">
-          <li>Create a new Google Sheet (e.g. <b>InfoLedgr</b>) in your Drive.</li>
-          <li>Open <b>Extensions → Apps Script</b>, delete the sample code and paste in the contents of <span class="code">apps-script/Code.gs</span> from the app folder.</li>
-          <li>Pick the <b>setup</b> function and press <b>Run</b>, then approve access. Open <b>Execution log</b> and copy your API key.</li>
-          <li><b>Deploy → New deployment → Web app</b>. Execute as <b>Me</b>, Who has access <b>Anyone</b>. Copy the Web app URL.</li>
-          <li>Paste both below. Do this once on each device.</li></ol>
+      body: `${prefill.url ? '<p class="sub" style="margin-bottom:12px">Your connection details are filled in. Tap <b>Connect &amp; sync</b>.</p>' : `
+        <details style="margin-bottom:14px"${store.data.tx.length || sync.configured() ? '' : ' open'}><summary class="link" style="cursor:pointer">First time? Create your own private Sheet (about 5 minutes)</summary>
+        <ol class="steps" style="margin-top:10px">
+          ${tpl ? `<li>Open <a href="${esc(tpl)}" target="_blank" rel="noopener">this template</a> and click <b>Make a copy</b>. It's yours alone; nobody else can see it.</li>`
+                : '<li>Create a new Google Sheet, open <b>Extensions → Apps Script</b> and paste in <span class="code">apps-script/Code.gs</span>.</li>'}
+          <li>In your copy, a menu <b>InfoLedgr</b> appears after a few seconds (reload if not). Choose <b>1. Set up this Sheet</b> and allow access.<br>
+            <span class="sub">If Google says the app isn't verified: <b>Advanced → Go to InfoLedgr</b>. It's your own copy.</span></li>
+          <li><b>Extensions → Apps Script → Deploy → New deployment</b> → gear icon → <b>Web app</b>. Execute as <b>Me</b>, access <b>Anyone</b> → <b>Deploy</b>.</li>
+          <li>Back in the Sheet: <b>InfoLedgr → 2. Show connection details</b>. Open the connect link on each device, or paste the two values below.</li>
+        </ol></details>`}
         <form class="form" id="conn-f">
-          <div class="field"><label for="c-url">Web app URL</label><input id="c-url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(store.settings.apiUrl)}" required></div>
-          <div class="field"><label for="c-key">API key</label><input id="c-key" value="${esc(store.settings.apiKey)}" required autocomplete="off"></div>
+          <div class="field"><label for="c-url">Web app URL</label><input id="c-url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(url)}" required></div>
+          <div class="field"><label for="c-key">API key</label><input id="c-key" value="${esc(key)}" required autocomplete="off"></div>
           <p class="sub">Your data goes only to your own Google account. The key stops anyone who finds the URL from reading your Sheet.</p>
           <div class="modal-actions"><button class="btn primary" type="submit" id="c-go">Connect & sync</button></div></form>`,
       onMount(m, close) {

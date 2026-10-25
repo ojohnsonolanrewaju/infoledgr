@@ -1,8 +1,8 @@
 /* InfoLedgr service worker — app shell offline, network for everything else */
-const VERSION = 'infoledgr-v2';
+const VERSION = 'infoledgr-v3';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
-  './js/util.js', './js/store.js', './js/sync.js', './js/csv.js', './js/charts.js', './js/app.js',
+  './js/config.js', './js/util.js', './js/store.js', './js/sync.js', './js/csv.js', './js/charts.js', './js/app.js',
   './icons/icon-192.png', './icons/apple-touch-icon.png', './icons/favicon-32.png',
 ];
 

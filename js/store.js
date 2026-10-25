@@ -26,8 +26,8 @@
     ['Entertainment', 'expense', 'Lifestyle', '🎉'],
     ['Travel', 'expense', 'Lifestyle', '✈️'],
     ['Gifts & Donations', 'expense', 'Lifestyle', '🎁'],
-    ['Family Support', 'expense', 'Sent Home', '🇳🇬'],
-    ['Nigeria Investments', 'expense', 'Sent Home', '📈'],
+    ['Family Support', 'expense', 'Sent Home', '🏡'],
+    ['Investments Back Home', 'expense', 'Sent Home', '📈'],
     ['Fees & Charges', 'expense', 'Financial', '🏦'],
     ['Taxes', 'expense', 'Financial', '🧾'],
     ['Loan Refund', 'expense', 'Financial', '💳'],
@@ -58,11 +58,11 @@
     ['APOTHEKE', 'Health'], ['PRAXIS', 'Health'],
     ['MCFIT', 'Fitness & Sport'], ['FITSTAR', 'Fitness & Sport'], ['URBAN SPORTS', 'Fitness & Sport'],
     ['LUFTHANSA', 'Travel'], ['RYANAIR', 'Travel'], ['EUROWINGS', 'Travel'], ['BOOKING.COM', 'Travel'], ['AIRBNB', 'Travel'],
-    ['FAU ', 'Education'], ['ERLANGEN-NUERNBERG', 'Education'], ['STUDENTENWERK', 'Education'],
+    ['STUDENTENWERK', 'Education'], ['UNIVERSITAET', 'Education'], ['HOCHSCHULE', 'Education'],
     ['WORLDREMIT', 'Family Support'], ['LEMFI', 'Family Support'], ['REMITLY', 'Family Support'], ['WESTERN UNION', 'Family Support'],
     ['DARLEHEN', 'Loan Refund'], ['TILGUNG', 'Loan Refund'], ['KREDITRATE', 'Loan Refund'], ['LOAN REPAYMENT', 'Loan Refund'],
     ['FINANZAMT', 'Taxes'], ['ENTGELT', 'Fees & Charges'], ['KONTOFUEHRUNG', 'Fees & Charges'], ['KONTOFÜHRUNG', 'Fees & Charges'],
-    ['DELOITTE', 'Salary'], ['GEHALT', 'Salary'], ['LOHN', 'Salary'], ['ZINSEN', 'Interest & Dividends'], ['DIVIDENDE', 'Interest & Dividends'],
+    ['GEHALT', 'Salary'], ['LOHN', 'Salary'], ['ZINSEN', 'Interest & Dividends'], ['DIVIDENDE', 'Interest & Dividends'],
   ];
 
   // Starter items added after the first release, so existing installs get them too
@@ -77,7 +77,7 @@
   const DEFAULT_SETTINGS = {
     apiUrl: '', apiKey: '', lastSync: 0, lastSyncError: '',
     pinHash: '', pinSalt: '', lockAfterMin: 5, privacy: false,
-    defaultCurrency: 'EUR', theme: 'auto', seeded: false, seedVersion: 1,
+    defaultCurrency: 'EUR', homeCurrency: 'NGN', scriptVersion: 0, theme: 'auto', seeded: false, seedVersion: 1,
   };
 
   /* ── Normalisers: coerce Sheet strings back to typed values ── */
@@ -363,16 +363,16 @@
       }
       return Object.values(by).sort((a, b) => b.amount - a.amount).slice(0, n);
     },
-    sentHome(year) {
+    sentHome(year, home = 'NGN') {
       const ids = new Set(store.data.cats.filter((c) => c.group === 'Sent Home').map((c) => c.id));
       const list = store.data.tx.filter((t) => t.type === 'expense' && ids.has(t.category) && t.date.startsWith(String(year)));
-      const months = Array.from({ length: 12 }, (_, i) => ({ ym: `${year}-${String(i + 1).padStart(2, '0')}`, amount: 0, ngn: 0 }));
+      const months = Array.from({ length: 12 }, (_, i) => ({ ym: `${year}-${String(i + 1).padStart(2, '0')}`, amount: 0, home: 0 }));
       for (const t of list) {
         const m = months[Number(t.date.slice(5, 7)) - 1];
         m.amount += t.amountEUR;
-        m.ngn += t.currency === 'NGN' ? t.amount : t.amountEUR * store.rate('NGN');
+        m.home += t.currency === home ? t.amount : t.amountEUR * store.rate(home);
       }
-      return { months, total: U.sum(months, (m) => m.amount), totalNGN: U.sum(months, (m) => m.ngn) };
+      return { months, total: U.sum(months, (m) => m.amount), totalHome: U.sum(months, (m) => m.home) };
     },
     goal(g) {
       const saved = g.startAmount + U.sum(store.data.tx.filter((t) => t.type === 'saving' && t.goalId === g.id), (t) => t.amountEUR);

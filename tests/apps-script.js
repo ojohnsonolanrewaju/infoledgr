@@ -45,7 +45,7 @@ function load({ bound }) {
     },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null, setProperty: (k, v) => { props[k] = v; } }) },
     Logger: { log: (m) => logs.push(m) },
-    Utilities: { getUuid: () => 'abcd-1234-efgh', formatDate: () => '', newBlob: () => ({}), base64Decode: () => [] },
+    Utilities: { getUuid: () => 'uuid-' + Math.random().toString(36).slice(2), formatDate: () => '', newBlob: () => ({}), base64Decode: () => [] },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     ContentService: { createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
   };
@@ -85,4 +85,26 @@ for (const bound of [false, true]) {
   });
   test('setup is safe to run twice', () => { api.setup(); assert.strictEqual(post(api, { key, action: 'pull' }).data.Transactions.length, 1); });
 }
+console.log('sharing safety');
+test('existing install keeps its key when setup runs again', () => {
+  const { api, props } = load({ bound: true });
+  props.API_KEY = 'olumides-old-key'; // installed before KEY_SHEET_ID existed
+  api.setup();
+  assert.strictEqual(props.API_KEY, 'olumides-old-key');
+  api.setup();
+  assert.strictEqual(props.API_KEY, 'olumides-old-key');
+});
+test('a copy of a set-up Sheet gets its own key', () => {
+  const { api, props } = load({ bound: true });
+  props.API_KEY = 'original-key';
+  props.KEY_SHEET_ID = 'SOMEONE-ELSES-SHEET'; // properties copied along with the Sheet
+  api.setup();
+  assert.notStrictEqual(props.API_KEY, 'original-key');
+});
+test('ping reports the script version', () => {
+  const { api, props } = load({ bound: true });
+  api.setup();
+  assert.strictEqual(post(api, { key: props.API_KEY, action: 'ping' }).scriptVersion, 2);
+});
+
 console.log(`\n${passed} tests passed`);

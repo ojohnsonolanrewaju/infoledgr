@@ -6,6 +6,11 @@
  * then creates the Sheet for you), run `setup` once, then Deploy →
  * New deployment → Web app (Execute as: Me, Who has access: Anyone).
  *
+ * Sharing with friends: put this script in an EMPTY template Sheet
+ * (don't run setup there) and share its "make a copy" link. Each copy
+ * gets its own data and its own key; the InfoLedgr menu in the Sheet
+ * walks them through setup and shows a one-tap connect link.
+ *
  * The Sheet is the source of truth. The app keeps an offline copy
  * on each device and syncs through this script. Every request must
  * carry the secret API key that `setup` prints to the execution log.
@@ -26,6 +31,10 @@ var SHEETS = {
 var NUMERIC = ['amount', 'rate', 'amountEUR', 'budget', 'order', 'target', 'startAmount', 'day', 'updatedAt'];
 
 var DEFAULT_CURRENCIES = ['EUR', 'NGN', 'USD', 'GBP'];
+var SCRIPT_VERSION = 2;
+
+// Your hosted app address, e.g. 'https://infoledgr.pages.dev'. Used for the one-tap connect link.
+var APP_URL = '';
 var RECEIPT_FOLDER = 'InfoLedgr Receipts';
 
 /* ── One-time setup ─────────────────────────────────────────── */
@@ -41,7 +50,13 @@ function setup() {
   });
 
   var props = PropertiesService.getScriptProperties();
-  if (!props.getProperty('API_KEY')) props.setProperty('API_KEY', Utilities.getUuid().replace(/-/g, ''));
+  // A key belongs to one Sheet. If this script was copied from a Sheet where setup already ran,
+  // make a fresh key so the copy can't share the original's. Older installs keep their key.
+  var keySheet = props.getProperty('KEY_SHEET_ID');
+  if (!props.getProperty('API_KEY') || (keySheet && keySheet !== ss.getId())) {
+    props.setProperty('API_KEY', Utilities.getUuid().replace(/-/g, ''));
+  }
+  props.setProperty('KEY_SHEET_ID', ss.getId());
   Logger.log('✅ Setup complete. Your data Sheet: ' + ss.getUrl());
   Logger.log('Your InfoLedgr API key: ' + props.getProperty('API_KEY'));
   Logger.log('Next: Deploy → New deployment → Web app (Execute as: Me, Who has access: Anyone).');
@@ -64,6 +79,51 @@ function getSpreadsheet_(createIfMissing) {
   var ss = SpreadsheetApp.create('InfoLedgr Data');
   props.setProperty('SPREADSHEET_ID', ss.getId());
   return ss;
+}
+
+/* ── Sheet menu (no code editor needed) ─────────────────────── */
+
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('InfoLedgr')
+    .addItem('1. Set up this Sheet', 'menuSetup')
+    .addItem('2. Show connection details', 'showConnection')
+    .addSeparator()
+    .addItem('Help: how to deploy', 'showDeployHelp')
+    .addToUi();
+}
+
+function menuSetup() {
+  setup();
+  SpreadsheetApp.getUi().alert('✅ Your InfoLedgr Sheet is ready.\n\nNext: Extensions → Apps Script → Deploy → New deployment → Web app ' +
+    '(Execute as: Me, Who has access: Anyone). Then come back and choose InfoLedgr → 2. Show connection details.');
+}
+
+function showDeployHelp() {
+  SpreadsheetApp.getUi().alert('How to deploy (once):\n\n' +
+    '1. Extensions → Apps Script\n2. Deploy (blue button) → New deployment\n3. Gear icon → Web app\n' +
+    '4. Execute as: Me · Who has access: Anyone\n5. Deploy → Authorize access → choose your account\n' +
+    '   If Google says "app isn\'t verified": Advanced → Go to InfoLedgr (it\'s your own copy)\n' +
+    '6. Back in the Sheet: InfoLedgr → 2. Show connection details');
+}
+
+function showConnection() {
+  var key = PropertiesService.getScriptProperties().getProperty('API_KEY');
+  var url = '';
+  try { url = (ScriptApp.getService().getUrl() || '').replace(/\/dev$/, '/exec'); } catch (e) { /* not deployed */ }
+  if (!key) return SpreadsheetApp.getUi().alert('Run InfoLedgr → 1. Set up this Sheet first.');
+  if (!url) return showDeployHelp();
+  var link = APP_URL ? APP_URL.replace(/\/+$/, '') + '/#connect?u=' + encodeURIComponent(url) + '&k=' + encodeURIComponent(key) : '';
+  var esc = function (s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
+  var box = function (label, value) {
+    return '<p style="margin:14px 0 4px;font-weight:600">' + label + '</p>' +
+      '<textarea readonly onclick="this.select()" style="width:100%;height:58px;font:12px monospace">' + esc(value) + '</textarea>';
+  };
+  var html = '<div style="font-family:Arial,sans-serif;font-size:13px;color:#0A0F1E">' +
+    (link ? '<p><b>Easiest:</b> open this link on each phone and laptop, then tap <b>Connect &amp; sync</b>. ' +
+      'Send it to yourself (e.g. email or WhatsApp to yourself). Keep it private: it unlocks your data.</p>' + box('One-tap connect link', link) +
+      '<p style="margin-top:18px;color:#5C6589">Or enter these in InfoLedgr → Settings → Connect Google Sheet:</p>' : '<p>Enter these in InfoLedgr → Settings → Connect Google Sheet:</p>') +
+    box('Web app URL', url) + box('API key', key) + '</div>';
+  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(520).setHeight(link ? 470 : 300), 'Connect InfoLedgr');
 }
 
 /** Run this if you lose your key. */
@@ -132,8 +192,8 @@ function doPost(e) {
     if (!key || req.key !== key) return json_({ ok: false, error: 'unauthorized' });
 
     switch (req.action) {
-      case 'ping':        return json_({ ok: true, now: Date.now() });
-      case 'pull':        return json_({ ok: true, data: pull_() });
+      case 'ping':        return json_({ ok: true, now: Date.now(), scriptVersion: SCRIPT_VERSION });
+      case 'pull':        return json_({ ok: true, data: pull_(), scriptVersion: SCRIPT_VERSION });
       case 'push':        return json_(push_(req.ops || []));
       case 'upload':      return json_(upload_(req));
       case 'addCurrency': return json_(addCurrency_(req.code));

@@ -39,6 +39,32 @@ The Sheet gets tabs `Transactions`, `Categories`, `Goals`, `Recurring`, `Rules`,
 > **Updating the script later:** after pasting new code, use **Deploy → Manage deployments → Edit → Version: New version** so the URL stays the same.
 > **Lost a device?** Run `rotateApiKey` in Apps Script and re-enter the new key on your other devices.
 
+## Share with friends & family
+
+Everyone uses the same app link; each person's data lives in **their own** Google Sheet. You never see their data.
+
+**One-time prep (you):**
+1. In `apps-script/Code.gs`, set `APP_URL` to your app address (e.g. `https://infoledgr.pages.dev`).
+2. Create a **new, empty** Google Sheet called *InfoLedgr (template)*. Never use your own data Sheet.
+3. **Extensions → Apps Script**, paste `Code.gs`, save. **Do not run setup** in the template.
+4. **Share → General access: Anyone with the link · Viewer.** Copy the link and change the ending `/edit…` to `/copy`.
+5. Put that `/copy` link in `js/config.js` → `templateUrl`, commit. It now shows in the app's connect screen.
+
+**Your friend (about 5 minutes):**
+1. Open your app link → Settings → Connect Google Sheet → follow the template link → **Make a copy**.
+2. In their copy: menu **InfoLedgr → 1. Set up this Sheet** (allow access; on "app isn't verified" → *Advanced → Go to InfoLedgr*).
+3. **Extensions → Apps Script → Deploy → New deployment → Web app** (Me / Anyone).
+4. **InfoLedgr → 2. Show connection details** → open the one-tap link on each device.
+
+Each copy makes its own secret key, even if copied from a Sheet where setup already ran.
+
+## Updating the script (existing users)
+
+App updates arrive automatically. When `Code.gs` changes (Settings shows "Sheet script update available"):
+1. Open your Sheet → **Extensions → Apps Script**, replace all code with the new `Code.gs`, save.
+2. **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.** This keeps the same URL, so devices stay connected.
+3. Your data and API key are untouched. Optionally run `setup` once to get the InfoLedgr menu tabs checked.
+
 ## Install on your phone
 
 Open the hosted URL in Safari (iPhone) or Chrome (Android) → **Share → Add to Home Screen**. It opens full-screen like a native app and works offline. Changes made offline sync when you're back online.
@@ -56,6 +82,7 @@ Your data is never in the repo or on the host. Only the app code is.
 
 ```
 ├── index.html            app shell
+├── js/config.js          your template link (edit this)
 ├── manifest.webmanifest  PWA install metadata
 ├── sw.js                 offline cache
 ├── css/app.css           styles (Infolytics brand tokens, light + dark)

@@ -83,7 +83,8 @@
           store.queue.splice(0, n);
           store.save();
         }
-        const { data } = await api.call('pull');
+        const { data, scriptVersion } = await api.call('pull');
+        store.settings.scriptVersion = scriptVersion || 1;
         store.applyRemote(data, store.queue);
         store.migrateSeeds();
         store.postRecurring();
