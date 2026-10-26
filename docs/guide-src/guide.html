@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>InfoLedgr Setup Guide</title>
+<style>
+  /*FONTS*/
+  @page { size: A4; margin: 0; }
+  :root {
+    --ink: #0A0F1E; --ink2: #2D3451; --ink3: #5C6589; --line: #E3E5EE; --bg: #F3F4F8;
+    --accent: #1246F0; --accent-soft: #E8EEFE; --green: #0D9E6E; --amber: #D97706; --amber-soft: #FEF3C7; --red: #DC2626;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Figtree', sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.45; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { width: 210mm; height: 297mm; padding: 16mm 16mm 14mm; position: relative; overflow: hidden; page-break-after: always; background: #fff; }
+  .page:last-child { page-break-after: auto; }
+  h1 { font-size: 26pt; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+  h2 { font-size: 17pt; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 3mm; }
+  h3 { font-size: 11.5pt; font-weight: 700; margin-bottom: 1.5mm; }
+  p { margin-bottom: 2.5mm; color: var(--ink2); }
+  b { color: var(--ink); font-weight: 700; }
+  a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .muted { color: var(--ink3); }
+  .small { font-size: 9pt; }
+  .logo { font-weight: 800; font-size: 15pt; letter-spacing: -0.02em; }
+  .logo span, .logo i { color: #6E93FF; font-style: normal; }
+  .runner { position: absolute; top: 9mm; left: 16mm; right: 16mm; display: flex; justify-content: space-between; font-size: 8.5pt; color: var(--ink3); }
+  .runner .logo { font-size: 10pt; color: var(--ink); }
+  .runner .logo span, .runner .logo i { color: var(--accent); }
+  .foot { position: absolute; bottom: 8mm; left: 16mm; right: 16mm; display: flex; justify-content: space-between; font-size: 8pt; color: var(--ink3); border-top: 1px solid var(--line); padding-top: 2.5mm; }
+
+  /* Step header */
+  .step { display: flex; gap: 4mm; align-items: center; margin: 4mm 0 3mm; }
+  .step .n { width: 11mm; height: 11mm; border-radius: 3mm; background: var(--accent); color: #fff; font-weight: 800; font-size: 15pt; display: grid; place-items: center; flex-shrink: 0; }
+  .step .t { font-size: 15pt; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
+  .step .t small { display: block; font-size: 9pt; font-weight: 500; color: var(--ink3); letter-spacing: 0; }
+
+  ol.do { list-style: none; counter-reset: do; margin: 0 0 3mm; }
+  ol.do li { counter-increment: do; position: relative; padding: 1.6mm 0 1.6mm 9mm; color: var(--ink2); }
+  ol.do li::before { content: counter(do, lower-alpha); position: absolute; left: 0; top: 1.5mm; width: 6mm; height: 6mm; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 9pt; display: grid; place-items: center; }
+
+  .tip, .warn, .ok { border-radius: 3mm; padding: 3mm 4mm; margin: 3mm 0; font-size: 9.5pt; display: flex; gap: 3mm; }
+  .tip { background: var(--accent-soft); color: var(--ink2); }
+  .warn { background: var(--amber-soft); color: #78350F; }
+  .ok { background: #E7F7F1; color: #065F46; }
+  .tip .i, .warn .i, .ok .i { font-size: 12pt; line-height: 1.2; }
+  .tip b, .warn b, .ok b { color: inherit; }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; align-items: start; }
+  .row-3-2 { display: grid; grid-template-columns: 1.15fr 1fr; gap: 6mm; align-items: start; }
+  .shot { border: 1px solid var(--line); border-radius: 3mm; overflow: hidden; box-shadow: 0 1mm 4mm rgba(10,15,30,.08); background: #fff; }
+  .shot img { display: block; width: 100%; }
+  .cap { font-size: 8.5pt; color: var(--ink3); margin-top: 1.5mm; text-align: center; }
+  .path { display: inline-block; background: var(--bg); border: 1px solid var(--line); border-radius: 1.5mm; padding: 0.3mm 2mm; font-weight: 700; color: var(--ink); font-size: 9.5pt; white-space: nowrap; }
+  .code { font-family: ui-monospace, Menlo, monospace; font-size: 8.5pt; background: var(--bg); border: 1px solid var(--line); border-radius: 1.5mm; padding: 0.3mm 1.5mm; word-break: break-all; }
+  .hl { outline: 0.7mm solid var(--amber); outline-offset: 0.4mm; border-radius: 1mm; background: #FFF7E0; }
+  .tap { position: relative; }
+  .tap::after { content: '👆'; position: absolute; right: -6mm; top: 50%; transform: translateY(-40%); font-size: 13pt; }
+
+  /* ── Google UI replicas ── */
+  .mock { border: 1px solid #DADCE0; border-radius: 3mm; background: #fff; font-family: 'Figtree', Arial, sans-serif; font-size: 9pt; color: #202124; overflow: hidden; box-shadow: 0 1mm 4mm rgba(10,15,30,.08); }
+  .mock-bar { background: #F8F9FA; border-bottom: 1px solid #DADCE0; padding: 2mm 3mm; display: flex; gap: 3.5mm; align-items: center; color: #3C4043; }
+  .mock-bar .doc { font-weight: 600; margin-right: 3mm; display: flex; align-items: center; gap: 1.5mm; }
+  .sheet-ico { width: 4mm; height: 5mm; background: #0F9D58; border-radius: 0.6mm; display: inline-block; }
+  .menu { position: relative; }
+  .dropdown { position: absolute; top: 6mm; right: -2mm; background: #fff; border: 1px solid #DADCE0; border-radius: 1.5mm; box-shadow: 0 1mm 4mm rgba(0,0,0,.18); min-width: 58mm; padding: 1.5mm 0; z-index: 2; }
+  .dropdown div { padding: 1.8mm 4mm; white-space: nowrap; }
+  .dropdown hr { border: 0; border-top: 1px solid #E8EAED; margin: 1mm 0; }
+  .grid-cells { height: 34mm; background-image: linear-gradient(#E8EAED 1px, transparent 1px), linear-gradient(90deg, #E8EAED 1px, transparent 1px); background-size: 20mm 6mm; }
+  .gbtn { display: inline-block; padding: 1.8mm 4.5mm; border-radius: 1.5mm; font-weight: 600; font-size: 9pt; }
+  .gbtn.blue { background: #1A73E8; color: #fff; }
+  .gbtn.ghost { color: #1A73E8; }
+  .field-m { border: 1px solid #DADCE0; border-radius: 1.5mm; padding: 2mm 3mm; margin-top: 1mm; display: flex; justify-content: space-between; }
+  .lbl-m { font-size: 8pt; color: #5F6368; margin-top: 3mm; }
+
+  /* cover */
+  .cover { background: linear-gradient(140deg, #0A0F1E 0%, #14204A 70%, #1B2C66 100%); color: #fff; padding: 22mm 18mm; }
+  .cover::before { content: ''; position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px); background-size: 9mm 9mm; }
+  .cover > * { position: relative; }
+  .cover .logo { font-size: 20pt; }
+  .cover h1 { font-size: 40pt; margin: 26mm 0 4mm; }
+  .cover .lead { font-size: 15pt; color: #C9D3F5; max-width: 140mm; }
+  .need { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5mm; margin-top: 18mm; }
+  .need > div { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); border-radius: 3mm; padding: 5mm; }
+  .need .e { font-size: 18pt; }
+  .need b { color: #fff; display: block; margin-top: 2mm; font-size: 11pt; }
+  .need span { color: #AAB6E0; font-size: 9pt; }
+  .cover-steps { margin-top: 12mm; display: grid; grid-template-columns: repeat(6, 1fr); gap: 2mm; }
+  .cover-steps div { border-top: 1mm solid #6E93FF; padding-top: 2.5mm; font-size: 8.5pt; color: #C9D3F5; }
+  .cover-steps div b { color: #fff; display: block; font-size: 13pt; }
+  .cover-promise { position: absolute; bottom: 20mm; left: 18mm; right: 18mm; display: flex; gap: 4mm; align-items: center; background: rgba(13,158,110,.16); border: 1px solid rgba(13,158,110,.45); border-radius: 3mm; padding: 4mm 5mm; color: #D1FAE5; font-size: 10pt; }
+  .cover-promise b { color: #fff; }
+
+  /* overview */
+  .how { display: flex; align-items: center; justify-content: space-between; gap: 3mm; margin: 4mm 0 6mm; }
+  .how .node { flex: 1; border: 1px solid var(--line); border-radius: 3mm; padding: 4mm; text-align: center; background: var(--bg); }
+  .how .node .e { font-size: 20pt; }
+  .how .node b { display: block; margin-top: 1mm; }
+  .how .node span { font-size: 8.5pt; color: var(--ink3); }
+  .how .arrow { font-size: 16pt; color: var(--accent); font-weight: 800; }
+  .overview { display: grid; gap: 2.5mm; }
+  .overview div { display: grid; grid-template-columns: 10mm 1fr 18mm; align-items: center; gap: 3mm; padding: 3mm 4mm; border: 1px solid var(--line); border-radius: 3mm; }
+  .overview .n { width: 8mm; height: 8mm; border-radius: 2mm; background: var(--accent); color: #fff; font-weight: 800; display: grid; place-items: center; }
+  .overview .tm { text-align: right; font-size: 8.5pt; color: var(--ink3); }
+  .overview p { margin: 0; font-size: 9.5pt; }
+  .overview b { font-size: 10.5pt; }
+
+  table.trouble { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  table.trouble th { text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: .05em; color: var(--ink3); padding: 2mm 2.5mm; border-bottom: 1px solid var(--line); }
+  table.trouble td { padding: 1.7mm 2.5mm; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink2); }
+  table.trouble td:first-child { font-weight: 700; color: var(--ink); width: 40%; }
+  .phone-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+  .phone-steps > div { border: 1px solid var(--line); border-radius: 3mm; padding: 4mm; }
+  .phone-steps h3 { display: flex; align-items: center; gap: 2mm; }
+  .first { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2.5mm; }
+  .first > div { border: 1px solid var(--line); border-radius: 3mm; padding: 2.8mm 3mm; }
+  .first .e { font-size: 15pt; }
+</style>
+</head>
+<body>
+
+<!-- ═════════ COVER ═════════ -->
+<section class="page cover">
+  <div class="logo">Info<span>Ledgr</span><i>.</i></div>
+  <h1>Setup guide</h1>
+  <p class="lead">Your personal income, expense &amp; budget tracker, on your phone and laptop, with your data in your own Google Drive.</p>
+
+  <div class="need">
+    <div><div class="e">💻</div><b>A laptop or computer</b><span>for the one-time setup (the Google Sheets phone app can't do it)</span></div>
+    <div><div class="e">🔑</div><b>A Google account</b><span>the same one you use for Gmail or Google Drive</span></div>
+    <div><div class="e">⏱️</div><b>About 10 minutes</b><span>once. After that, you mostly use your phone</span></div>
+  </div>
+
+  <div class="cover-steps">
+    <div><b>1</b>Open the app</div>
+    <div><b>2</b>Copy your Sheet</div>
+    <div><b>3</b>Set it up</div>
+    <div><b>4</b>Turn it on</div>
+    <div><b>5</b>Connect</div>
+    <div><b>6</b>Add to phone</div>
+  </div>
+
+  <div class="cover-promise"><span style="font-size:16pt">🔒</span>
+    <div><b>Private by design.</b> Free, no ads, no bank login. Your money data is saved in a Google Sheet that only <b>you</b> own. Not even the person who shared this app with you can see it.</div>
+  </div>
+</section>
+
+<!-- ═════════ OVERVIEW ═════════ -->
+<section class="page">
+  <div class="runner"><div class="logo">Info<span>Ledgr</span><i>.</i></div><div>Setup guide</div></div>
+  <div style="height:8mm"></div>
+  <h2>How it works</h2>
+  <p>InfoLedgr is a website that works like an app. Everything you record is kept on your device and copied to <b>your own Google Sheet</b>, which keeps your phone and laptop in sync and doubles as your backup.</p>
+  <div class="how">
+    <div class="node"><div class="e">📱</div><b>Your phone</b><span>add payments in seconds</span></div>
+    <div class="arrow">⇄</div>
+    <div class="node"><div class="e">🟩</div><b>Your Google Sheet</b><span>in your Drive, only yours</span></div>
+    <div class="arrow">⇄</div>
+    <div class="node"><div class="e">💻</div><b>Your laptop</b><span>same data, bigger charts</span></div>
+  </div>
+
+  <h2 style="margin-top:2mm">The 6 steps</h2>
+  <div class="overview">
+    <div><span class="n">1</span><p><b>Open the app and choose your currency</b><br>₦, €, £, $ or another</p><span class="tm">1 min</span></div>
+    <div><span class="n">2</span><p><b>Make your own copy of the InfoLedgr Sheet</b><br>One click: "Make a copy"</p><span class="tm">1 min</span></div>
+    <div><span class="n">3</span><p><b>Set up your Sheet</b><br>From the InfoLedgr menu, then allow access</p><span class="tm">2 min</span></div>
+    <div><span class="n">4</span><p><b>Turn it on (deploy)</b><br>A few clicks in Google's "Apps Script" page</p><span class="tm">3 min</span></div>
+    <div><span class="n">5</span><p><b>Connect the app to your Sheet</b><br>Open your personal connect link</p><span class="tm">1 min</span></div>
+    <div><span class="n">6</span><p><b>Put InfoLedgr on your phone's home screen</b><br>It then opens like any other app</p><span class="tm">2 min</span></div>
+  </div>
+
+  <div class="tip" style="margin-top:6mm"><span class="i">💡</span><div><b>Do it all in one sitting on your laptop,</b> using the <b>Chrome</b> browser if you can. Keep this guide open next to it. Where you see a <span class="hl" style="padding:0 1.5mm">highlighted</span> button in the pictures, that's what to click.</div></div>
+  <div class="warn"><span class="i">⚠️</span><div>In step 3, Google shows a warning that the app <b>"isn't verified"</b>. That's expected: it's your own private copy, not a public app from a company. The guide shows exactly what to click.</div></div>
+
+  <div class="foot"><span>InfoLedgr setup guide</span><span>2</span></div>
+</section>
+
+<!-- ═════════ STEPS 1–2 ═════════ -->
+<section class="page">
+  <div class="runner"><div class="logo">Info<span>Ledgr</span><i>.</i></div><div>Setup guide</div></div>
+  <div style="height:5mm"></div>
+
+  <div class="step"><span class="n">1</span><span class="t">Open the app and choose your currency<small>On your laptop</small></span></div>
+  <div class="row-3-2">
+    <div>
+      <ol class="do">
+        <li>Go to <a href="https://infoledgr.pages.dev">infoledgr.pages.dev</a></li>
+        <li>On the <b>Welcome</b> card, find <b>"Your main currency"</b></li>
+        <li>Pick the currency you mostly use, e.g. <b>₦ NGN</b> if you live in Nigeria, <b>€ EUR</b> if you live in Germany</li>
+      </ol>
+      <div class="tip"><span class="i">💡</span><div>Payments in other currencies are fine too. You choose the currency each time you add one, and InfoLedgr converts it for your totals.</div></div>
+    </div>
+    <div><div class="shot"><img src="s-welcome.png" alt="Welcome card with main currency picker"></div><div class="cap">The welcome card</div></div>
+  </div>
+
+  <div class="step" style="margin-top:7mm"><span class="n">2</span><span class="t">Make your own copy of the InfoLedgr Sheet<small>Your private place for your data</small></span></div>
+  <ol class="do">
+    <li>In the app, click <span class="path">Settings</span> → <span class="path">Connect Google Sheet</span>. The setup steps are shown there too.</li>
+    <li>Click <b>this template</b>, or open this link directly:<br><a class="small" href="https://docs.google.com/spreadsheets/d/1qaSJbqzGkqlc1ZIubtk9nCQ_32ZcLCmWKxRN7Ex6hgo/copy">docs.google.com/spreadsheets/d/1qaSJbqzGkqlc1ZIubtk9nCQ_32ZcLCmWKxRN7Ex6hgo/copy</a></li>
+    <li>Google asks <b>"Would you like to make a copy?"</b> → click <span class="gbtn blue hl">Make a copy</span></li>
+  </ol>
+  <div class="row-3-2">
+    <div class="shot"><img src="s-connect-steps.png" alt="Connect Google Sheet screen in the app"></div>
+    <div>
+      <div class="ok"><span class="i">✅</span><div>Your copy opens in a new tab, called something like <b>"Copy of InfoLedgr (template)"</b>. You can rename it, e.g. <b>"My InfoLedgr"</b>.</div></div>
+      <div class="tip"><span class="i">🔒</span><div>This copy belongs to you. Nobody else, including whoever shared the template, can open it.</div></div>
+      <p class="small muted">Keep the app tab open, you'll come back to it in step 5.</p>
+    </div>
+  </div>
+
+  <div class="foot"><span>InfoLedgr setup guide</span><span>3</span></div>
+</section>
+
+<!-- ═════════ STEP 3 ═════════ -->
+<section class="page">
+  <div class="runner"><div class="logo">Info<span>Ledgr</span><i>.</i></div><div>Setup guide</div></div>
+  <div style="height:5mm"></div>
+
+  <div class="step"><span class="n">3</span><span class="t">Set up your Sheet<small>In your copy of the Sheet</small></span></div>
+  <ol class="do">
+    <li>Wait about 5 seconds. A new menu called <b>InfoLedgr</b> appears at the top, after "Help". <span class="muted">Not there? Reload the page.</span></li>
+    <li>Click <span class="path">InfoLedgr</span> → <span class="path">1. Set up this Sheet</span></li>
+  </ol>
+
+  <div class="mock" style="margin:2mm 0 5mm">
+    <div class="mock-bar">
+      <span class="doc"><span class="sheet-ico"></span>My InfoLedgr</span>
+      <span>File</span><span>Edit</span><span>View</span><span>Insert</span><span>Format</span><span>Data</span><span>Tools</span><span>Extensions</span><span>Help</span>
+      <span class="menu"><b class="hl" style="padding:0.5mm 2mm">InfoLedgr</b>
+        <div class="dropdown"><div class="hl tap" style="margin:0 2mm">1. Set up this Sheet</div><div>2. Show connection details</div><hr><div>Help: how to deploy</div></div>
+      </span>
+    </div>
+    <div class="grid-cells"></div>
+  </div>
+
+  <ol class="do" start="3" style="counter-reset: do 2">
+    <li><b>"Authorisation required"</b> appears → click <span class="gbtn blue">OK</span> / <span class="gbtn blue">Continue</span> and choose your Google account</li>
+    <li>Google shows <b>"Google hasn't verified this app"</b>. Click <b>Advanced</b> (small link, bottom left), then <b>Go to … (unsafe)</b></li>
+    <li>On the next screen, check the boxes / click <span class="gbtn blue">Allow</span></li>
+  </ol>
+
+  <div class="row">
+    <div class="mock" style="padding:5mm">
+      <div style="font-size:15pt;margin-bottom:2mm">⚠️</div>
+      <div style="font-size:12pt;font-weight:600;margin-bottom:2mm">Google hasn't verified this app</div>
+      <div style="color:#5F6368;margin-bottom:4mm">The app is requesting access to sensitive info in your Google Account…</div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="gbtn ghost hl tap">Advanced</span><span class="gbtn blue">BACK TO SAFETY</span>
+      </div>
+      <div style="border-top:1px solid #E8EAED;margin-top:4mm;padding-top:3mm;color:#5F6368;font-size:8.5pt">Continue only if you understand the risks…<br>
+        <span class="hl" style="color:#1A73E8;font-weight:600;padding:0 1mm;display:inline-block;margin-top:1.5mm">Go to Copy of InfoLedgr (unsafe)</span></div>
+    </div>
+    <div>
+      <div class="warn"><span class="i">🛡️</span><div><b>Why "unsafe"?</b> Google says this about any script it hasn't reviewed, like a small home-made tool. This one runs in <b>your</b> account, on <b>your</b> Sheet, and sends your data nowhere else.</div></div>
+      <p class="small">InfoLedgr asks to:</p>
+      <ul class="small" style="padding-left:5mm;color:var(--ink2)">
+        <li><b>See and edit your spreadsheet</b>: to save your transactions</li>
+        <li><b>Create files in Drive</b>: for receipt photos (optional)</li>
+        <li><b>Connect to an external service</b>: to check your setup</li>
+      </ul>
+      <div class="ok"><span class="i">✅</span><div>You'll see <b>"Your InfoLedgr Sheet is ready"</b>, and new tabs appear at the bottom: Transactions, Categories, Goals…</div></div>
+    </div>
+  </div>
+
+  <div class="foot"><span>InfoLedgr setup guide</span><span>4</span></div>
+</section>
+
+<!-- ═════════ STEP 4 ═════════ -->
+<section class="page">
+  <div class="runner"><div class="logo">Info<span>Ledgr</span><i>.</i></div><div>Setup guide</div></div>
+  <div style="height:5mm"></div>
+
+  <div class="step"><span class="n">4</span><span class="t">Turn it on (deploy)<small>This lets the app talk to your Sheet. You only do this once.</small></span></div>
+  <ol class="do">
+    <li>In your Sheet, click <span class="path">Extensions</span> → <span class="path">Apps Script</span>. A new tab opens with code. <b>Don't change anything there.</b></li>
+    <li>Top right: click the blue <span class="gbtn blue">Deploy</span> button → <b>New deployment</b></li>
+    <li>Next to "Select type", click the <b>⚙️ gear</b> → <b>Web app</b></li>
+    <li>Set <b>Execute as: Me</b> and <b>Who has access: Anyone</b> → click <span class="gbtn blue">Deploy</span></li>
+  </ol>
+
+  <div class="row">
+    <div class="mock">
+      <div style="padding:3.5mm 4mm;border-bottom:1px solid #E8EAED;font-size:11pt;font-weight:600">New deployment</div>
+      <div style="padding:2mm 4mm 4mm">
+        <div class="lbl-m">Select type</div>
+        <div class="field-m"><span>⚙️ <b class="hl" style="padding:0 1.5mm">Web app</b></span><span>▾</span></div>
+        <div class="lbl-m">Description</div>
+        <div class="field-m" style="color:#9AA0A6"><span>InfoLedgr (optional)</span></div>
+        <div style="font-weight:600;margin-top:4mm">Web app</div>
+        <div class="lbl-m">Execute as</div>
+        <div class="field-m hl"><span><b>Me</b> (you@gmail.com)</span><span>▾</span></div>
+        <div class="lbl-m">Who has access</div>
+        <div class="field-m hl"><span><b>Anyone</b></span><span>▾</span></div>
+        <div style="text-align:right;margin-top:4mm"><span class="gbtn ghost">Cancel</span> <span class="gbtn blue hl tap">Deploy</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="warn"><span class="i">⚠️</span><div>Choose <b>"Anyone"</b>, <u>not</u> "Anyone with a Google account" or "Only myself", or the app can't connect. Your data stays protected by a secret key only your devices have.</div></div>
+      <p>If Google asks you to authorise again, repeat what you did in step 3 (Advanced → Go to… → Allow).</p>
+      <ol class="do" start="5" style="counter-reset: do 4">
+        <li>Google shows <b>"Deployment successfully created"</b>. Under <b>Web app</b>, click <span class="gbtn ghost hl">Copy</span> next to the URL. It ends in <span class="code">/exec</span></li>
+      </ol>
+      <div class="mock" style="padding:4mm">
+        <div style="font-weight:600;margin-bottom:2mm">Deployment successfully created.</div>
+        <div class="lbl-m" style="margin-top:0">Web app · URL</div>
+        <div class="field-m"><span class="code" style="border:0;background:none;padding:0">https://script.google.com/macros/s/AKfy…/exec</span><span class="hl" style="color:#1A73E8;font-weight:600;padding:0 1mm">Copy</span></div>
+        <div style="text-align:right;margin-top:3mm"><span class="gbtn blue">Done</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tip" style="margin-top:5mm"><span class="i">💡</span><div>You can close the Apps Script tab now. You'll never need it again, unless you're told to update InfoLedgr's Sheet script (rare).</div></div>
+
+  <div class="foot"><span>InfoLedgr setup guide</span><span>5</span></div>
+</section>
+
+<!-- ═════════ STEPS 5–6 ═════════ -->
+<section class="page">
+  <div class="runner"><div class="logo">Info<span>Ledgr</span><i>.</i></div><div>Setup guide</div></div>
+  <div style="height:5mm"></div>
+
+  <div class="step"><span class="n">5</span><span class="t">Connect the app to your Sheet<small>Back in your Sheet's tab</small></span></div>
+  <div class="row">
+    <div>
+      <ol class="do">
+        <li>Click <span class="path">InfoLedgr</span> → <span class="path">2. Show connection details</span></li>
+        <li>If it asks for your <b>Web app URL</b>, paste the one you copied in step 4 → <b>OK</b></li>
+        <li>A box shows your <b>one-tap connect link</b>. Click inside it, copy it (<b>Ctrl+C</b>, on Mac <b>⌘+C</b>)</li>
+        <li>Paste it into your browser's address bar and press Enter</li>
+        <li>InfoLedgr opens with your details filled in → click <span class="gbtn blue" style="background:var(--accent)">Connect &amp; sync</span></li>
+      </ol>
+      <div class="ok"><span class="i">✅</span><div>You'll see <b>"Connected — your data is syncing ✓"</b>, and the sync button gets a green dot.</div></div>
+      <div class="warn"><span class="i">🔒</span><div><b>Keep your connect link private.</b> It unlocks your data, like a key. Only send it to yourself.</div></div>
+    </div>
+    <div><div class="shot"><img src="s-connect-filled.png" alt="Connect screen with details filled in"></div><div class="cap">After opening your connect link</div></div>
+  </div>
+
+  <div class="step" style="margin-top:5mm"><span class="n">6</span><span class="t">Put InfoLedgr on your phone<small>So it opens like a normal app</small></span></div>
+  <ol class="do">
+    <li>Send your connect link <b>to yourself</b>, e.g. in WhatsApp "Message yourself", or by email</li>
+    <li>On your phone, open the link → tap <b>Connect &amp; sync</b></li>
+  </ol>
+  <div class="phone-steps">
+    <div><h3>🍎 iPhone (Safari)</h3>
+      <p class="small" style="margin:0">If the link opened in WhatsApp's browser, tap <b>⋯ → Open in Safari</b> first.<br>Then tap the <b>Share</b> button <b>⬆️</b> → scroll down → <b>Add to Home Screen</b> → <b>Add</b>.</p></div>
+    <div><h3>🤖 Android (Chrome)</h3>
+      <p class="small" style="margin:0">If the link opened inside WhatsApp, tap <b>⋮ → Open in Chrome</b> first.<br>Then tap <b>⋮</b> (top right) → <b>Add to Home screen</b> or <b>Install app</b> → <b>Install</b>.</p></div>
+  </div>
+  <div class="tip"><span class="i">💡</span><div>Using a second laptop or tablet too? Just open the same connect link on it. Everything stays in sync.</div></div>
+
+  <div class="foot"><span>InfoLedgr setup guide</span><span>6</span></div>
+</section>
+
+<!-- ═════════ START USING ═════════ -->
+<section class="page">
+  <div class="runner"><div class="logo">Info<span>Ledgr</span><i>.</i></div><div>Setup guide</div></div>
+  <div style="height:8mm"></div>
+  <h2>🎉 You're set up. Your first 10 minutes</h2>
+  <div class="row-3-2">
+    <div class="first">
+      <div><div class="e">➕</div><b>Add a payment</b><p class="small" style="margin:1mm 0 0">Tap the blue <b>+</b>: amount → category → <b>Add</b>. About 5 seconds.</p></div>
+      <div><div class="e">🎯</div><b>Set budgets</b><p class="small" style="margin:1mm 0 0"><b>Plan → Budgets → Edit all budgets</b>. You're warned at 80%.</p></div>
+      <div><div class="e">🔁</div><b>Add regular bills</b><p class="small" style="margin:1mm 0 0"><b>Plan → Recurring</b>: rent, salary, subscriptions post themselves monthly.</p></div>
+      <div><div class="e">🛟</div><b>Create a goal</b><p class="small" style="margin:1mm 0 0"><b>Plan → Goals</b>: it tells you how much to save each month.</p></div>
+      <div><div class="e">⬆️</div><b>Import your bank</b><p class="small" style="margin:1mm 0 0"><b>Activity → Import bank CSV</b>, using your bank's CSV/Excel export.</p></div>
+      <div><div class="e">🔐</div><b>Set a PIN</b><p class="small" style="margin:1mm 0 0"><b>Settings → PIN lock</b>, on each phone.</p></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:3mm;max-width:72mm;margin-left:auto">
+      <div><div class="shot"><img src="s-add.png" alt="Adding a payment"></div><div class="cap">Adding a payment</div></div>
+      <div><div class="shot"><img src="s-home.png" alt="Home dashboard"></div><div class="cap">Your dashboard</div></div>
+    </div>
+  </div>
+
+  <h2 style="margin-top:5mm">If something doesn't work</h2>
+  <table class="trouble">
+    <tr><th>What you see</th><th>What to do</th></tr>
+    <tr><td>No "InfoLedgr" menu in the Sheet</td><td>Wait 10 seconds and reload the page. Make sure you're in <b>your copy</b>, not the template.</td></tr>
+    <tr><td>"Google hasn't verified this app"</td><td>Normal for your own copy: <b>Advanced → Go to … (unsafe) → Allow</b> (step 3).</td></tr>
+    <tr><td>"Could not connect: Failed to fetch"</td><td>In Apps Script: <b>Deploy → Manage deployments → ✏️</b> → Who has access: <b>Anyone</b> → Deploy. Check the URL ends in <span class="code">/exec</span>.</td></tr>
+    <tr><td>"The key doesn't match this Web app URL"</td><td>The URL and key came from different Sheets. Use <b>InfoLedgr → 2. Show connection details</b> in <b>your</b> Sheet, and copy the URL from Apps Script opened <b>from that Sheet</b> (Extensions → Apps Script).</td></tr>
+    <tr><td>"That Web app URL belongs to a different Sheet"</td><td>Same fix as above: open Apps Script from inside your own Sheet and copy its URL.</td></tr>
+    <tr><td>Phone shows old data</td><td>Tap the sync button (circular arrows) at the top, or close and reopen the app.</td></tr>
+  </table>
+
+  <div class="tip" style="margin-top:3.5mm"><span class="i">💬</span><div><b>Still stuck?</b> Send a screenshot to the person who shared InfoLedgr with you. Never send your connect link or API key; nobody needs it to help you.</div></div>
+
+  <div class="foot"><span>InfoLedgr · your personal income, expense &amp; budget tracker · <a href="https://infoledgr.pages.dev">infoledgr.pages.dev</a></span><span>7</span></div>
+</section>
+
+</body>
+</html>
